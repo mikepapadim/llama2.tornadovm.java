@@ -143,8 +143,21 @@ class Llama2 {
         }
     }
 
+    static void matmul2(float[] xout, float[] x, float[] w, int n, int d) {
+        for (@Parallel  int i = 0; i < d; i++) {
+            float val = 0f;
+            int j = 0;
 
-    static float[] forward(Transformer transformer, int token, int pos) {
+            for (; j < n; j++) {
+                val += w[i * n + j] * x[j];
+            }
+
+            xout[i] = val;
+        }
+    }
+
+
+  static float[] forward(Transformer transformer, int token, int pos) {
         // a few convenience variables
         Config p = transformer.config;
         Weights w = transformer.weights;
@@ -156,7 +169,7 @@ class Llama2 {
         int kv_mul = p.n_heads / p.n_kv_heads; // integer multiplier of the kv sharing in multiquery
 
         // copy the token embedding into x
-        System.out.println("\nCopy of token. index  " + token * dim  + " offset " + 0 + " lenght " + dim +"\n");
+//        System.out.println("\nCopy of token. index  " + token * dim  + " offset " + 0 + " lenght " + dim +"\n");
         w.token_embedding_table.get(token * dim, s.x, 0, dim);
 
 
@@ -301,30 +314,18 @@ class Llama2 {
         // s.x -> input : READ ONLY
         // w.wcls -> input: READ ONLY
 
-        FloatArray inputA = new FloatArray(501);
-        inputA.init(2f);
-        //         FloatArray inputB = new FloatArray(s.x.length);
-        //         inputB.init(1f);
-        //         FloatArray output = new FloatArray(s.logits.length);
-        //         output.init(0f);
-
-
-        for (int i=0; i < inputA.getSize(); i++) {
-            System.out.println("x " + inputA.get(i) +" " + inputA.getClass().getName());
-        }
-
         TaskGraph taskGraph = new TaskGraph("s0")
-                .transferToDevice(DataTransferMode.EVERY_EXECUTION, inputA)
-                .task("t0", Llama2::testFloatCopy, inputA)
-                .transferToHost(DataTransferMode.EVERY_EXECUTION, inputA);
+                .transferToDevice(DataTransferMode.EVERY_EXECUTION,  s.x, w.wclsAsPrimitive)
+                .task("t0", Llama2::matmul2,s.logits, s.x, w.wclsAsPrimitive, dim, p.vocab_size)
+                .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
 
-        TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraph.snapshot());
-        executionPlan.execute();
+            TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraph.snapshot());
+            executionPlan.execute();
         // FloatArray inputA = new FloatArray(s.x);
         // FloatArray inputA = new FloatArray(w.wcls.array());
         // FloatArray output = new FloatArray(s.logits.size);
         //        output.ini
-        matmulVector(s.logits, s.x, w.wcls, dim, p.vocab_size);
+//        matmul(s.logits, s.x, w.wcls, dim, p.vocab_size);
         return s.logits;
     }
 
@@ -520,7 +521,7 @@ class Llama2 {
 
             // print the token as string, decode it with the Tokenizer object
             String piece = decode(tokenizer, token, next);
-            //            safe_printf(piece);
+                        safe_printf(piece);
 
             System.out.flush();
             token = next;
@@ -687,7 +688,7 @@ class Llama2 {
     // python reference and that seemed ok, but this was not thoroughly tested and
     // is not safely implemented, it's more a proof of concept atm.
 
-    static void chat(Transformer transformer, Tokenizer tokenizer, Sampler sampler,
+  static void chat(Transformer transformer, Tokenizer tokenizer, Sampler sampler,
             String cli_user_prompt, String cli_system_prompt, int steps) {
 
         // buffers for reading the system prompt and user prompt from stdin
@@ -776,6 +777,12 @@ class Llama2 {
 
     // ----------------------------------------------------------------------------
     // int main
+
+//    final class  Generator {
+//
+//        transformer, tokenizer, sampler, prompt, steps
+//        Generator
+//    }
 
     static void error_usage() {
         System.err.println("Usage:   java Llama2 <checkpoint> [options]");

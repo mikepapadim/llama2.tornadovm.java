@@ -24,6 +24,8 @@ public class Weights {
     // (optional) classifier weights for the logits, on the last layer
     final FloatBuffer wcls; // (vocab_size, dim)
 
+     float[] wclsAsPrimitive;
+
     static FloatBuffer takeFloats(MemorySegment memorySegment, long[] position, int... dims) {
         long totalBytes = 1;
         for (int d : dims) {
@@ -64,5 +66,8 @@ public class Weights {
         this.wcls = config.shared_weights
                 ? this.token_embedding_table
                 : takeFloats(memorySegment, position, config.vocab_size, config.dim);
+        this.wclsAsPrimitive = new float[wcls.remaining()];
+        wcls.get(wclsAsPrimitive);
+
     }
 }
