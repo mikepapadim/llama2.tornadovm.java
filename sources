@@ -1,0 +1,6 @@
+export TORNADO_ROOT=/home/mikepapadim/manchester/TornadoVM
+export TORNADO_SDK=${TORNADO_ROOT}/bin/sdk
+export LLAMA_ROOT=/home/mikepapadim/manchester/llma/tornadovm-llama-gpu
+export PATH="${PATH}:${LLAMA_ROOT=}/bin"
+
+
