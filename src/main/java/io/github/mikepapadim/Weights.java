@@ -3,6 +3,8 @@ package io.github.mikepapadim;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
+import java.util.ArrayList;
+import java.util.Arrays;
 
 public class Weights {
     // token embedding table
@@ -11,6 +13,8 @@ public class Weights {
     final FloatBuffer[] rms_att_weight; // (layer, dim) rmsnorm weights
     // weights for matmuls. note dim == n_heads * head_size
     final FloatBuffer[] wq; // (layer, dim, n_heads * head_size)
+
+    ArrayList<float[]> weights_rc;
     final FloatBuffer[] wk; // (layer, dim, n_kv_heads * head_size)
     final FloatBuffer[] wv; // (layer, dim, n_kv_heads * head_size)
     final FloatBuffer[] wo; // (layer, n_heads * head_size, dim)

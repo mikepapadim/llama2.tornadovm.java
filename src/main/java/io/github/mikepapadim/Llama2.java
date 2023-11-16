@@ -18,9 +18,10 @@ import uk.ac.manchester.tornado.api.ImmutableTaskGraph;
 import uk.ac.manchester.tornado.api.TaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
 import uk.ac.manchester.tornado.api.annotations.Parallel;
-import uk.ac.manchester.tornado.api.data.nativetypes.FloatArray;
 import uk.ac.manchester.tornado.api.enums.DataTransferMode;
+import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 
+import javax.swing.table.JTableHeader;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -57,6 +58,23 @@ class Llama2 {
         }
     }
 
+    static void rmsnormP(float[] o, float[] x, FloatBuffer weight, int size) {
+        // calculate sum of squares in parallel
+        double sumOfSquares = IntStream.range(0, size)
+                .parallel()
+                .mapToDouble(j -> x[j] * x[j])
+                .sum();
+
+        float ss = (float) (sumOfSquares / size + 1e-5f);
+        ss = 1.0f / (float) Math.sqrt(ss);
+
+        // normalize and scale in parallel using the computed ss
+        float finalSs = ss;
+        IntStream.range(0, size)
+                .parallel()
+                .forEach(j -> o[j] = weight.get(j) * (finalSs * x[j]));
+    }
+
     static void softmax(float[] x, int xOffset, int size) {
         // find max value (for numerical stability)
         float max_val = x[0 + xOffset];
@@ -79,7 +97,7 @@ class Llama2 {
 
     static final boolean USE_VECTOR_API = "true".equalsIgnoreCase(System.getProperty("llama2.VectorAPI", "true"));
 
-    static void matmulVector(float[] xout, float[] x, FloatBuffer w, int n, int d) {
+    static void matmul(float[] xout, float[] x, FloatBuffer w, int n, int d) {
         // W (d,n) @ x (n,) -> xout (d,)
         // by far the most amount of time is spent inside this little function
         MemorySegment wSegment = MemorySegment.ofBuffer(w);
@@ -129,7 +147,7 @@ class Llama2 {
         });
     }
 
-    static void matmul(float[] xout, float[] x, FloatBuffer w, int n, int d) {
+    static void matmul22(float[] xout, float[] x, FloatBuffer w, int n, int d) {
 
         for (int i = 0; i < d; i++) {
             float val = 0f;
@@ -156,8 +174,27 @@ class Llama2 {
         }
     }
 
+    public static float[] rotateVector(int dim, float[] s, float[] k, int head_size, int pos, int kv_dim) {
+        float[] vec = new float[s.length];
+        for (int i = 0; i < dim; i += 2) {
+            int head_dim = i % head_size;
+            float freq = (float) (1.0 / Math.pow(10000.0f, head_dim / (float) head_size));
+            float val = pos * freq;
+            float fcr = (float) Math.cos(val);
+            float fci = (float) Math.sin(val);
+            int rotn = i < kv_dim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
+            for (int v = 0; v < rotn; v++) {
+                vec = v == 0 ? s : k; // the vector to rotate (query or key)
+                float v0 = vec[i];
+                float v1 = vec[i + 1];
+                vec[i] = v0 * fcr - v1 * fci;
+                vec[i + 1] = v0 * fci + v1 * fcr;
+            }
+        }
+        return vec;
+    }
 
-  static float[] forward(Transformer transformer, int token, int pos) {
+  static float[] forward(Transformer transformer, int token, int pos, TornadoExecutionPlan executionPlan) {
         // a few convenience variables
         Config p = transformer.config;
         Weights w = transformer.weights;
@@ -179,11 +216,13 @@ class Llama2 {
 
 
         // forward all the layers
+
         for (int l = 0; l < p.n_layers; l++) {
 
-            //            System.out.println("layer " + l  + " total " + p.n_layers);
+//            System.out.println("layer " + l  + " total " + p.n_layers);
             // attention rmsnorm
             rmsnorm(s.xb, s.x, w.rms_att_weight[l], dim);
+
 
             // qkv matmuls for this position
             matmul(s.q, s.xb, w.wq[l], dim, dim);
@@ -206,6 +245,8 @@ class Llama2 {
                     vec[i + 1] = v0 * fci + v1 * fcr;
                 }
             }
+
+//            float[] vec = rotateVector(dim,  s.q,  s.k, head_size,  pos,  kv_dim);
 
             // save key,value at this time step (pos) to our kv cache
             //int loff = l * p.seq_len * kv_dim; // kv cache layer offset for convenience
@@ -278,19 +319,7 @@ class Llama2 {
             matmul(s.hb, s.xb, w.w1[l], dim, p.hidden_dim);
             matmul(s.hb2, s.xb, w.w3[l], dim, p.hidden_dim);
 
-            // SwiGLU non-linearity
-            for (int i = 0; i < hidden_dim; i++) {
-                float val = s.hb[i];
-                // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
-                val *= (1.0f / (1.0f + Math.exp(-val)));
-                // elementwise multiply with w3(x)
-                s.hb[i] = val;
-            }
-
-            // elementwise multiply with w3(x)
-            for (int i = 0; i < hidden_dim; i++) {
-                s.hb[i] = s.hb[i] * s.hb2[i];
-            }
+            fusedSiluEwiseMul(hidden_dim, s.hb, s.hb2);
 
             // final matmul to get the output of the ffn
             matmul(s.xb, s.hb, w.w2[l], p.hidden_dim, dim);
@@ -299,44 +328,33 @@ class Llama2 {
             for (int i = 0; i < dim; i++) {
                 s.x[i] += s.xb[i];
             }
+
         }
 
         // final rmsnorm
         rmsnorm(s.x, s.x, w.rms_final_weight, dim);
 
-        // classifier into logits
-        //This one need to be offloaded
+        executionPlan.execute();
 
-        // FloatArray , FloatArray, FloatArray, int, int
-        // This the only MATMUL thats makes sense to be offloaded
-
-        // s.logits -> output -> used only in output
-        // s.x -> input : READ ONLY
-        // w.wcls -> input: READ ONLY
-
-        TaskGraph taskGraph = new TaskGraph("s0")
-                .transferToDevice(DataTransferMode.EVERY_EXECUTION,  s.x, w.wclsAsPrimitive)
-                .task("t0", Llama2::matmul2,s.logits, s.x, w.wclsAsPrimitive, dim, p.vocab_size)
-                .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
-
-            TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraph.snapshot());
-            executionPlan.execute();
-        // FloatArray inputA = new FloatArray(s.x);
-        // FloatArray inputA = new FloatArray(w.wcls.array());
-        // FloatArray output = new FloatArray(s.logits.size);
-        //        output.ini
 //        matmul(s.logits, s.x, w.wcls, dim, p.vocab_size);
         return s.logits;
     }
 
+    // SwiGLU non-linearity
+    static void fusedSiluEwiseMul(int hidden_dim, float[] out, float[] hb2) {
+//        System.out.println("fusedSiluEwise");
+        for (int i = 0; i < hidden_dim; i++) {
+            float val = out[i];
+            // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
+            val *= (1.0f / (1.0f + Math.exp(-val)));
+            // elementwise multiply with w3(x)
+            out[i] = val * hb2[i];
+        }
+    }
     // ----------------------------------------------------------------------------
 
     // The Byte Pair Encoding (BPE) Tokenizer that translates strings <-> tokens
-    public static void testFloatCopy(FloatArray a) {
-        for (@Parallel int i = 0; i < a.getSize(); i++) {
-            a.set(i, 50.0f);
-        }
-    }
+
     static String decode(Tokenizer t, int prev_token, int token) {
         String piece = t.vocab[token];
         // following BOS (1) token, sentencepiece decoder strips any leading whitespace (see PR #89)
@@ -495,6 +513,20 @@ class Llama2 {
             System.exit(1);
         }
 
+        Config p = transformer.config;
+        Weights w = transformer.weights;
+        RunState s = transformer.state;
+        int dim = p.dim;
+
+        TaskGraph taskGraph = new TaskGraph("s0")
+                .transferToDevice(DataTransferMode.EVERY_EXECUTION,  s.x)
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION,  w.wclsAsPrimitive)
+                .task("t0", Llama2::matmul2,s.logits, s.x, w.wclsAsPrimitive, dim, p.vocab_size)
+                .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
+
+//        TornadoExecutionPlan executionPlan = new TornadoExecutionPlan();
+        TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraph.snapshot());
+        //init tornado
         // start the main loop
         long start = 0;  // used to time our code, only initialized after first iteration
         int next;        // will store the next token in the sequence
@@ -502,7 +534,7 @@ class Llama2 {
         int pos = 0;     // position in the sequence
         while (pos < steps) {
             // forward the transformer to get logits for the next token
-            float[] logits = forward(transformer, token, pos);
+            float[] logits = forward(transformer, token, pos, executionPlan);
 
             // advance the state machine
             if (pos < num_prompt_tokens - 1) {
@@ -757,7 +789,7 @@ class Llama2 {
             }
 
             // forward the transformer to get logits for the next token
-            float[] logits = forward(transformer, token, pos);
+            float[] logits = forward(transformer, token, pos, new TornadoExecutionPlan());
             next = sample(sampler, logits);
             pos++;
 
@@ -849,12 +881,15 @@ class Llama2 {
         if (steps <= 0) {
             steps = 0;
         }
+//        staticMethod();
+
 
         // build the Transformer via the model .bin file
         Transformer transformer = new Transformer(checkpoint_path);
         if (steps == 0 || steps > transformer.config.seq_len) {
             steps = transformer.config.seq_len; // ovrerride to ~max length
         }
+
 
         // build the Tokenizer via the tokenizer .bin file
         Tokenizer tokenizer = new Tokenizer(tokenizer_path, transformer.config.vocab_size);
@@ -872,4 +907,5 @@ class Llama2 {
             }
         }
     }
+
 }

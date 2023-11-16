@@ -9,6 +9,8 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 
+import static java.lang.foreign.Arena.*;
+
 public class Transformer {
     final Config config; // the hyperparameters of the architecture (the blueprint)
     final Weights weights; // the weights of the model
