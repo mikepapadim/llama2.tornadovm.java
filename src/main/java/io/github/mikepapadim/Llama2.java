@@ -20,6 +20,9 @@ import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
 import uk.ac.manchester.tornado.api.annotations.Parallel;
 import uk.ac.manchester.tornado.api.enums.DataTransferMode;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+import uk.ac.manchester.tornado.api.types.collections.VectorFloat8;
+import uk.ac.manchester.tornado.api.types.vectors.Float4;
+import uk.ac.manchester.tornado.api.types.vectors.Float8;
 
 import javax.swing.table.JTableHeader;
 import java.io.BufferedInputStream;
@@ -101,6 +104,7 @@ class Llama2 {
         // W (d,n) @ x (n,) -> xout (d,)
         // by far the most amount of time is spent inside this little function
         MemorySegment wSegment = MemorySegment.ofBuffer(w);
+//        System.out.println("N " + n);
         IntStream.range(0, d).parallel().forEach(i -> {
             float val = 0f;
             int j = 0;
@@ -174,6 +178,50 @@ class Llama2 {
         }
     }
 
+    static void matmsul2(float[] xout, float[] x, float[] w, int n, int d) {
+        for (@Parallel int i = 0; i < d; i++) {
+            float val = 0f;
+
+            for (int j = 0; j < n; j += 8) {
+                Float8 wv8 = new Float8(w[(i * n + j) + 0], w[(i * n + j) + 1], w[(i * n + j) + 2], w[(i * n + j) + 3], w[(i * n + j) + 4], w[(i * n + j) + 5], w[(i * n + j) + 6], w[(i * n + j) + 7]);
+                Float8 xv8 = new Float8(x[j + 0], x[j + 1], x[j + 2], x[j + 3], x[j + 4], x[j + 5], x[j + 6], x[j + 7]);
+
+                val += Float8.dot(wv8, xv8);
+            }
+            xout[i] = val;
+        }
+    }
+    static void matmul2z(float[] xout, float[] x, float[] w, int n, int d) {
+        for (@Parallel int i = 0; i < d; i++) {
+            float val = 0f;
+
+            for (int j = 0; j < n; j += 4) {
+                Float4 wv8 = new Float4(w[(i * n + j) + 0], w[(i * n + j) + 1], w[(i * n + j) + 2], w[(i * n + j) + 3]);
+                Float4 xv8 = new Float4(x[j + 0], x[j + 1], x[j + 2], x[j + 3]);
+
+//                Float4 res = Float4.mult(wv8, xv8);
+//                val += res.get(0) + res.get(1) + res.get(2) + res.get(3);
+
+                val += Float4.dot(wv8, xv8);
+
+            }
+
+            xout[i] = val;
+        }
+    }
+
+    static void matmulV(float[] xout, float[] x, float[] w, int n, int d) {
+        for (@Parallel  int i = 0; i < d; i++) {
+            float val = 0f;
+            int j = 0;
+
+            for (; j < n; j++) {
+                val += w[i * n + j] * x[j];
+            }
+
+            xout[i] = val;
+        }
+    }
     public static float[] rotateVector(int dim, float[] s, float[] k, int head_size, int pos, int kv_dim) {
         float[] vec = new float[s.length];
         for (int i = 0; i < dim; i += 2) {
@@ -209,10 +257,6 @@ class Llama2 {
 //        System.out.println("\nCopy of token. index  " + token * dim  + " offset " + 0 + " lenght " + dim +"\n");
         w.token_embedding_table.get(token * dim, s.x, 0, dim);
 
-
-        // copy from embdedddings to s.x to operate per token
-
-        // From FloatBuffer to float[]
 
 
         // forward all the layers
@@ -306,10 +350,7 @@ class Llama2 {
             // final matmul to get the output of the attention
             matmul(s.xb2, s.xb, w.wo[l], dim, dim);
 
-            // residual connection back into x
-            for (int i = 0; i < dim; i++) {
-                s.x[i] += s.xb2[i];
-            }
+            residualConnection(s.x, s.xb2, dim);
 
             // ffn rmsnorm
             rmsnorm(s.xb, s.x, w.rms_ffn_weight[l], dim);
@@ -324,11 +365,8 @@ class Llama2 {
             // final matmul to get the output of the ffn
             matmul(s.xb, s.hb, w.w2[l], p.hidden_dim, dim);
 
-            // residual connection
-            for (int i = 0; i < dim; i++) {
-                s.x[i] += s.xb[i];
-            }
 
+            residualConnection(s.x, s.xb, dim);
         }
 
         // final rmsnorm
@@ -342,13 +380,21 @@ class Llama2 {
 
     // SwiGLU non-linearity
     static void fusedSiluEwiseMul(int hidden_dim, float[] out, float[] hb2) {
-//        System.out.println("fusedSiluEwise");
-        for (int i = 0; i < hidden_dim; i++) {
+//        System.out.println("fusedSiluEwise" + hidden_dim);
+        for (@Parallel int i = 0; i < hidden_dim; i++) {
+//            IntStream.range(0, hidden_dim).parallel().forEach(i -> {
             float val = out[i];
             // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
             val *= (1.0f / (1.0f + Math.exp(-val)));
             // elementwise multiply with w3(x)
             out[i] = val * hb2[i];
+        }
+//    });
+    }
+
+    static void residualConnection(float[] s, float[] xb2, int dim) {
+        for (@Parallel int i = 0; i < dim; i++) {
+            s[i] = s[i] + xb2[i];
         }
     }
     // ----------------------------------------------------------------------------
@@ -524,8 +570,19 @@ class Llama2 {
                 .task("t0", Llama2::matmul2,s.logits, s.x, w.wclsAsPrimitive, dim, p.vocab_size)
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
 
-//        TornadoExecutionPlan executionPlan = new TornadoExecutionPlan();
+        int kv_dim = (p.dim * p.n_kv_heads) / p.n_heads;
+
+
+        TaskGraph taskGraph0 = new TaskGraph("s1")
+                .transferToDevice(DataTransferMode.EVERY_EXECUTION,  s.xb)
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION,  w.wclsAsPrimitive)
+                .task("t1", Llama2::matmul2,s.q, s.xb, w.wq[l], dim, dim)
+                .task("t2", Llama2::matmul2,s.k, s.xb, w.wk[l], dim, kv_dim)
+                .task("t3", Llama2::matmul2,s.v, s.xb, w.wv[l], dim, kv_dim)
+                .transferToHost(DataTransferMode.EVERY_EXECUTION,s.q, s.k, s.v);
+
         TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraph.snapshot());
+        TornadoExecutionPlan executionPlan2 = new TornadoExecutionPlan(taskGraph0.snapshot());
         //init tornado
         // start the main loop
         long start = 0;  // used to time our code, only initialized after first iteration
