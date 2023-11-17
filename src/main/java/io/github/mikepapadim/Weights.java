@@ -1,5 +1,8 @@
 package io.github.mikepapadim;
 
+import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+import uk.ac.manchester.tornado.api.types.collections.VectorFloat8;
+
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
@@ -30,7 +33,13 @@ public class Weights {
 
      float[] wclsAsPrimitive;
 
-    static FloatBuffer takeFloats(MemorySegment memorySegment, long[] position, int... dims) {
+     VectorFloat8 wclsAsPrimitiveV;
+
+    ArrayList<float[]> weightsAsPrimitivesK;
+    ArrayList<float[]> weightsAsPrimitivesV;
+    ArrayList<float[]> weightsAsPrimitivesQ;
+
+     FloatBuffer takeFloats(MemorySegment memorySegment, long[] position, int... dims) {
         long totalBytes = 1;
         for (int d : dims) {
             totalBytes *= d;
@@ -41,12 +50,32 @@ public class Weights {
         return slice.asByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
     }
 
-    static FloatBuffer[] takeArray(MemorySegment memorySegment, long[] position, int dim0, int... dims) {
+     FloatBuffer[] takeArray(MemorySegment memorySegment, long[] position, int dim0, int... dims) {
         FloatBuffer[] segments = new FloatBuffer[dim0];
         for (int i = 0; i < dim0; ++i) {
             segments[i] = takeFloats(memorySegment, position, dims);
         }
         return segments;
+    }
+
+    FloatBuffer[] takeArray2(MemorySegment memorySegment, long[] position, int dim0, int... dims) {
+        FloatBuffer[] segments = new FloatBuffer[dim0];
+        for (int i = 0; i < dim0; ++i) {
+            segments[i] = takeFloats(memorySegment, position, dims);
+        }
+        return segments;
+    }
+
+    ArrayList<float[]> normalizeInputWeight(FloatBuffer[] x) {
+          ArrayList<float[]> xn = new ArrayList<>();
+
+        for (FloatBuffer floatBuffer : x) {
+            FloatBuffer src = floatBuffer.duplicate();
+            float[] temp = new float[src.remaining()];
+            src.get(temp);
+            xn.add(temp);
+        }
+          return xn;
     }
 
     // ----------------------------------------------------------------------------
@@ -72,6 +101,19 @@ public class Weights {
                 : takeFloats(memorySegment, position, config.vocab_size, config.dim);
         this.wclsAsPrimitive = new float[wcls.remaining()];
         wcls.get(wclsAsPrimitive);
+
+        FloatArray d = FloatArray.fromArray(wclsAsPrimitive);
+        wclsAsPrimitiveV = new VectorFloat8(d);
+
+        for (int i  =0 ; i < wclsAsPrimitiveV.size(); i++) {
+//            System.out.println("V " + wclsAsPrimitiveV.get(i).toString());
+//            System.out.println("V " + wclsAsPrimitiveV.get(i));
+        }
+
+//        System.exit(1);
+        this.weightsAsPrimitivesK = normalizeInputWeight(wk);
+        this.weightsAsPrimitivesV = normalizeInputWeight(wv);
+        this.weightsAsPrimitivesQ = normalizeInputWeight(wq);
 
     }
 }

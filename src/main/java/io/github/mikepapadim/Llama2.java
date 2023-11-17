@@ -47,6 +47,7 @@ class Llama2 {
     // neural net blocks; the dynamics of the Transformer
 
     static void rmsnorm(float[] o, float[] x, FloatBuffer weight, int size) {
+//        System.out.println("Sizee " + size);
         // calculate sum of squares
         float ss = 0.0f;
         for (int j = 0; j < size; j++) {
@@ -178,19 +179,32 @@ class Llama2 {
         }
     }
 
-    static void matmsul2(float[] xout, float[] x, float[] w, int n, int d) {
-        for (@Parallel int i = 0; i < d; i++) {
-            float val = 0f;
-
-            for (int j = 0; j < n; j += 8) {
-                Float8 wv8 = new Float8(w[(i * n + j) + 0], w[(i * n + j) + 1], w[(i * n + j) + 2], w[(i * n + j) + 3], w[(i * n + j) + 4], w[(i * n + j) + 5], w[(i * n + j) + 6], w[(i * n + j) + 7]);
-                Float8 xv8 = new Float8(x[j + 0], x[j + 1], x[j + 2], x[j + 3], x[j + 4], x[j + 5], x[j + 6], x[j + 7]);
-
-                val += Float8.dot(wv8, xv8);
-            }
-            xout[i] = val;
-        }
-    }
+//    static void matmul2V(float[] xout, VectorFloat8 x, float[] w, int n, int d) {
+//        for (@Parallel int i = 0; i < d; i++) {
+//            float val = 0f;
+//
+//            for (int j = 0; j < n; j += 8) {
+//                Float8 wv8 = new Float8(w[(i * n + j) + 0], w[(i * n + j) + 1], w[(i * n + j) + 2], w[(i * n + j) + 3], w[(i * n + j) + 4], w[(i * n + j) + 5], w[(i * n + j) + 6], w[(i * n + j) + 7]);
+//                Float8 xv8 = new Float8(x[j + 0], x[j + 1], x[j + 2], x[j + 3], x[j + 4], x[j + 5], x[j + 6], x[j + 7]);
+//
+//                val += Float8.dot(wv8, xv8);
+//            }
+//            xout[i] = val;
+//        }
+//    }
+//    static void matmul2(float[] xout, float[] x, float[] w, int n, int d) {
+//        for (@Parallel int i = 0; i < d; i++) {
+//            float val = 0f;
+//
+//            for (int j = 0; j < n; j += 8) {
+//                Float8 wv8 = new Float8(w[(i * n + j) + 0], w[(i * n + j) + 1], w[(i * n + j) + 2], w[(i * n + j) + 3], w[(i * n + j) + 4], w[(i * n + j) + 5], w[(i * n + j) + 6], w[(i * n + j) + 7]);
+//                Float8 xv8 = new Float8(x[j + 0], x[j + 1], x[j + 2], x[j + 3], x[j + 4], x[j + 5], x[j + 6], x[j + 7]);
+//
+//                val += Float8.dot(wv8, xv8);
+//            }
+//            xout[i] = val;
+//        }
+//    }
     static void matmul2z(float[] xout, float[] x, float[] w, int n, int d) {
         for (@Parallel int i = 0; i < d; i++) {
             float val = 0f;
@@ -242,7 +256,7 @@ class Llama2 {
         return vec;
     }
 
-  static float[] forward(Transformer transformer, int token, int pos, TornadoExecutionPlan executionPlan) {
+  static float[] forward(Transformer transformer, int token, int pos, ArrayList<TornadoExecutionPlan> executionPlan) {
         // a few convenience variables
         Config p = transformer.config;
         Weights w = transformer.weights;
@@ -263,15 +277,17 @@ class Llama2 {
 
         for (int l = 0; l < p.n_layers; l++) {
 
-//            System.out.println("layer " + l  + " total " + p.n_layers);
             // attention rmsnorm
             rmsnorm(s.xb, s.x, w.rms_att_weight[l], dim);
 
 
             // qkv matmuls for this position
+
             matmul(s.q, s.xb, w.wq[l], dim, dim);
             matmul(s.k, s.xb, w.wk[l], dim, kv_dim);
             matmul(s.v, s.xb, w.wv[l], dim, kv_dim);
+
+//            executionPlan.get(l).execute();
 
             // RoPE relative positional encoding: complex-valued rotate q and k in each head
             for (int i = 0; i < dim; i+=2) {
@@ -372,8 +388,10 @@ class Llama2 {
         // final rmsnorm
         rmsnorm(s.x, s.x, w.rms_final_weight, dim);
 
-        executionPlan.execute();
+//        executionPlan.get(12).execute();
+        executionPlan.get(executionPlan.size()-1).withDevice(TornadoExecutionPlan.getDevice(0,1)).execute();
 
+//      matmul2(s.logits, s.x, w.wclsAsPrimitive, dim, p.vocab_size);
 //        matmul(s.logits, s.x, w.wcls, dim, p.vocab_size);
         return s.logits;
     }
@@ -567,22 +585,25 @@ class Llama2 {
         TaskGraph taskGraph = new TaskGraph("s0")
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION,  s.x)
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION,  w.wclsAsPrimitive)
+//                .task("t0", Llama2::matmul2,s.logits, s.x, w.wclsAsPrimitive, dim, p.vocab_size)
                 .task("t0", Llama2::matmul2,s.logits, s.x, w.wclsAsPrimitive, dim, p.vocab_size)
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
 
         int kv_dim = (p.dim * p.n_kv_heads) / p.n_heads;
+        ArrayList<TornadoExecutionPlan> te = new ArrayList<>();
 
+        for(int i = 0; i < p.n_layers; i++) {
+            TaskGraph taskGraph0 = new TaskGraph("sx" + i)
+                    .transferToDevice(DataTransferMode.EVERY_EXECUTION,  s.xb)
+                    .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightsAsPrimitivesQ.get(i),  w.weightsAsPrimitivesK.get(i),  w.weightsAsPrimitivesV.get(i))
+                    .task("t1", Llama2::matmul2,s.q, s.xb, w.weightsAsPrimitivesQ.get(i), dim, dim)
+                    .task("t2", Llama2::matmul2,s.k, s.xb, w.weightsAsPrimitivesK.get(i), dim, kv_dim)
+                    .task("t3", Llama2::matmul2,s.v, s.xb, w.weightsAsPrimitivesV.get(i), dim, kv_dim)
+                    .transferToHost(DataTransferMode.EVERY_EXECUTION,s.q, s.k, s.v);
+            te.add(new TornadoExecutionPlan(taskGraph0.snapshot()));
+        }
 
-        TaskGraph taskGraph0 = new TaskGraph("s1")
-                .transferToDevice(DataTransferMode.EVERY_EXECUTION,  s.xb)
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION,  w.wclsAsPrimitive)
-                .task("t1", Llama2::matmul2,s.q, s.xb, w.wq[l], dim, dim)
-                .task("t2", Llama2::matmul2,s.k, s.xb, w.wk[l], dim, kv_dim)
-                .task("t3", Llama2::matmul2,s.v, s.xb, w.wv[l], dim, kv_dim)
-                .transferToHost(DataTransferMode.EVERY_EXECUTION,s.q, s.k, s.v);
-
-        TornadoExecutionPlan executionPlan = new TornadoExecutionPlan(taskGraph.snapshot());
-        TornadoExecutionPlan executionPlan2 = new TornadoExecutionPlan(taskGraph0.snapshot());
+        te.add(new TornadoExecutionPlan(taskGraph.snapshot()));
         //init tornado
         // start the main loop
         long start = 0;  // used to time our code, only initialized after first iteration
@@ -591,7 +612,7 @@ class Llama2 {
         int pos = 0;     // position in the sequence
         while (pos < steps) {
             // forward the transformer to get logits for the next token
-            float[] logits = forward(transformer, token, pos, executionPlan);
+            float[] logits = forward(transformer, token, pos, te);
 
             // advance the state machine
             if (pos < num_prompt_tokens - 1) {
@@ -846,7 +867,7 @@ class Llama2 {
             }
 
             // forward the transformer to get logits for the next token
-            float[] logits = forward(transformer, token, pos, new TornadoExecutionPlan());
+            float[] logits = forward(transformer, token, pos, null);
             next = sample(sampler, logits);
             pos++;
 
