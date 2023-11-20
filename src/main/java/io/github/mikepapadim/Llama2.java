@@ -389,7 +389,8 @@ class Llama2 {
         rmsnorm(s.x, s.x, w.rms_final_weight, dim);
 
 //        executionPlan.get(12).execute();
-        executionPlan.get(executionPlan.size()-1).withDevice(TornadoExecutionPlan.getDevice(0,1)).execute();
+//      executionPlan.get(executionPlan.size()-1).withDevice(TornadoExecutionPlan.getDevice(0,0)).execute();
+      executionPlan.get(executionPlan.size()-1).execute();
 
 //      matmul2(s.logits, s.x, w.wclsAsPrimitive, dim, p.vocab_size);
 //        matmul(s.logits, s.x, w.wcls, dim, p.vocab_size);
