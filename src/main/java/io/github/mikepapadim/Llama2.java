@@ -20,6 +20,7 @@ import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
 import uk.ac.manchester.tornado.api.annotations.Parallel;
 import uk.ac.manchester.tornado.api.enums.DataTransferMode;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+import uk.ac.manchester.tornado.api.types.collections.VectorFloat4;
 import uk.ac.manchester.tornado.api.types.collections.VectorFloat8;
 import uk.ac.manchester.tornado.api.types.vectors.Float4;
 import uk.ac.manchester.tornado.api.types.vectors.Float8;
@@ -47,7 +48,6 @@ class Llama2 {
     // neural net blocks; the dynamics of the Transformer
 
     static void rmsnorm(float[] o, float[] x, FloatBuffer weight, int size) {
-//        System.out.println("Sizee " + size);
         // calculate sum of squares
         float ss = 0.0f;
         for (int j = 0; j < size; j++) {
@@ -62,22 +62,6 @@ class Llama2 {
         }
     }
 
-    static void rmsnormP(float[] o, float[] x, FloatBuffer weight, int size) {
-        // calculate sum of squares in parallel
-        double sumOfSquares = IntStream.range(0, size)
-                .parallel()
-                .mapToDouble(j -> x[j] * x[j])
-                .sum();
-
-        float ss = (float) (sumOfSquares / size + 1e-5f);
-        ss = 1.0f / (float) Math.sqrt(ss);
-
-        // normalize and scale in parallel using the computed ss
-        float finalSs = ss;
-        IntStream.range(0, size)
-                .parallel()
-                .forEach(j -> o[j] = weight.get(j) * (finalSs * x[j]));
-    }
 
     static void softmax(float[] x, int xOffset, int size) {
         // find max value (for numerical stability)
@@ -105,7 +89,6 @@ class Llama2 {
         // W (d,n) @ x (n,) -> xout (d,)
         // by far the most amount of time is spent inside this little function
         MemorySegment wSegment = MemorySegment.ofBuffer(w);
-//        System.out.println("N " + n);
         IntStream.range(0, d).parallel().forEach(i -> {
             float val = 0f;
             int j = 0;
@@ -152,21 +135,17 @@ class Llama2 {
         });
     }
 
-    static void matmul22(float[] xout, float[] x, FloatBuffer w, int n, int d) {
-
-        for (int i = 0; i < d; i++) {
+    static void matmuxl2(float[] xout, float[] x, FloatArray w, int n, int d) {
+        for (@Parallel int i = 0; i < d; i++) {
             float val = 0f;
-            int j = 0;
-
-            for (; j < n; j++) {
+            for (int j=0; j < n; j++) {
                 val += w.get(i * n + j) * x[j];
             }
-
             xout[i] = val;
         }
     }
 
-    static void matmul2(float[] xout, float[] x, float[] w, int n, int d) {
+    static void matmuls2(float[] xout, float[] x, float[] w, int n, int d) {
         for (@Parallel  int i = 0; i < d; i++) {
             float val = 0f;
             int j = 0;
@@ -179,19 +158,21 @@ class Llama2 {
         }
     }
 
-//    static void matmul2V(float[] xout, VectorFloat8 x, float[] w, int n, int d) {
-//        for (@Parallel int i = 0; i < d; i++) {
-//            float val = 0f;
-//
-//            for (int j = 0; j < n; j += 8) {
-//                Float8 wv8 = new Float8(w[(i * n + j) + 0], w[(i * n + j) + 1], w[(i * n + j) + 2], w[(i * n + j) + 3], w[(i * n + j) + 4], w[(i * n + j) + 5], w[(i * n + j) + 6], w[(i * n + j) + 7]);
-//                Float8 xv8 = new Float8(x[j + 0], x[j + 1], x[j + 2], x[j + 3], x[j + 4], x[j + 5], x[j + 6], x[j + 7]);
-//
-//                val += Float8.dot(wv8, xv8);
-//            }
-//            xout[i] = val;
-//        }
-//    }
+    static void matmul2(float[] xout, float[] x, VectorFloat8 w, int n, int d) {
+        for (@Parallel int i = 0; i < d; i++) {
+            float val = 0f;
+
+            for (int j = 0; j < n; j += 8) {
+                Float8 xv8 = new Float8(x[j], x[j + 1], x[j + 2], x[j + 3], x[j + 4], x[j + 5], x[j + 6], x[j + 7]);
+                Float8 wv8 = w.get(i * (n / 8) + j / 8);
+
+                val += Float8.dot(wv8, xv8);
+
+            }
+
+            xout[i] = val;
+        }
+    }
 //    static void matmul2(float[] xout, float[] x, float[] w, int n, int d) {
 //        for (@Parallel int i = 0; i < d; i++) {
 //            float val = 0f;
@@ -205,18 +186,18 @@ class Llama2 {
 //            xout[i] = val;
 //        }
 //    }
-    static void matmul2z(float[] xout, float[] x, float[] w, int n, int d) {
+    static void matmul2(float[] xout, float[] x, VectorFloat4 w, int n, int d) {
         for (@Parallel int i = 0; i < d; i++) {
             float val = 0f;
 
             for (int j = 0; j < n; j += 4) {
-                Float4 wv8 = new Float4(w[(i * n + j) + 0], w[(i * n + j) + 1], w[(i * n + j) + 2], w[(i * n + j) + 3]);
+//                Float4 wv8 = new Float4(w.get((i * n + j) + 0), w.get((i * n + j) + 1), w.get((i * n + j) + 2), w.get((i * n + j) + 3));
                 Float4 xv8 = new Float4(x[j + 0], x[j + 1], x[j + 2], x[j + 3]);
 
 //                Float4 res = Float4.mult(wv8, xv8);
 //                val += res.get(0) + res.get(1) + res.get(2) + res.get(3);
-
-                val += Float4.dot(wv8, xv8);
+//                System.out.println("V " + w.get(i).toString());
+                val += Float4.dot(w.get(i), xv8);
 
             }
 
@@ -236,25 +217,6 @@ class Llama2 {
             xout[i] = val;
         }
     }
-    public static float[] rotateVector(int dim, float[] s, float[] k, int head_size, int pos, int kv_dim) {
-        float[] vec = new float[s.length];
-        for (int i = 0; i < dim; i += 2) {
-            int head_dim = i % head_size;
-            float freq = (float) (1.0 / Math.pow(10000.0f, head_dim / (float) head_size));
-            float val = pos * freq;
-            float fcr = (float) Math.cos(val);
-            float fci = (float) Math.sin(val);
-            int rotn = i < kv_dim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
-            for (int v = 0; v < rotn; v++) {
-                vec = v == 0 ? s : k; // the vector to rotate (query or key)
-                float v0 = vec[i];
-                float v1 = vec[i + 1];
-                vec[i] = v0 * fcr - v1 * fci;
-                vec[i + 1] = v0 * fci + v1 * fcr;
-            }
-        }
-        return vec;
-    }
 
   static float[] forward(Transformer transformer, int token, int pos, ArrayList<TornadoExecutionPlan> executionPlan) {
         // a few convenience variables
@@ -268,10 +230,7 @@ class Llama2 {
         int kv_mul = p.n_heads / p.n_kv_heads; // integer multiplier of the kv sharing in multiquery
 
         // copy the token embedding into x
-//        System.out.println("\nCopy of token. index  " + token * dim  + " offset " + 0 + " lenght " + dim +"\n");
-        w.token_embedding_table.get(token * dim, s.x, 0, dim);
-
-
+            w.token_embedding_table.get(token * dim, s.x, 0, dim);
 
         // forward all the layers
 
@@ -282,7 +241,6 @@ class Llama2 {
 
 
             // qkv matmuls for this position
-
             matmul(s.q, s.xb, w.wq[l], dim, dim);
             matmul(s.k, s.xb, w.wk[l], dim, kv_dim);
             matmul(s.v, s.xb, w.wv[l], dim, kv_dim);
@@ -306,7 +264,6 @@ class Llama2 {
                 }
             }
 
-//            float[] vec = rotateVector(dim,  s.q,  s.k, head_size,  pos,  kv_dim);
 
             // save key,value at this time step (pos) to our kv cache
             //int loff = l * p.seq_len * kv_dim; // kv cache layer offset for convenience
@@ -389,30 +346,28 @@ class Llama2 {
         rmsnorm(s.x, s.x, w.rms_final_weight, dim);
 
 //        executionPlan.get(12).execute();
-//      executionPlan.get(executionPlan.size()-1).withDevice(TornadoExecutionPlan.getDevice(0,0)).execute();
-      executionPlan.get(executionPlan.size()-1).execute();
+      executionPlan.get(executionPlan.size()-1).withDevice(TornadoExecutionPlan.getDevice(0,0)).execute();
+//      executionPlan.get(executionPlan.size()-1).execute();
 
 //      matmul2(s.logits, s.x, w.wclsAsPrimitive, dim, p.vocab_size);
-//        matmul(s.logits, s.x, w.wcls, dim, p.vocab_size);
+      //        matmul(s.logits, s.x, w.wcls, dim, p.vocab_size);
+//              matmul2(s.logits, s.x, w.wclsAsPrimitiveV, dim, p.vocab_size);
         return s.logits;
     }
 
     // SwiGLU non-linearity
     static void fusedSiluEwiseMul(int hidden_dim, float[] out, float[] hb2) {
-//        System.out.println("fusedSiluEwise" + hidden_dim);
         for (@Parallel int i = 0; i < hidden_dim; i++) {
-//            IntStream.range(0, hidden_dim).parallel().forEach(i -> {
             float val = out[i];
             // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
             val *= (1.0f / (1.0f + Math.exp(-val)));
             // elementwise multiply with w3(x)
             out[i] = val * hb2[i];
         }
-//    });
     }
 
     static void residualConnection(float[] s, float[] xb2, int dim) {
-        for (@Parallel int i = 0; i < dim; i++) {
+        for (int i = 0; i < dim; i++) {
             s[i] = s[i] + xb2[i];
         }
     }
@@ -583,26 +538,27 @@ class Llama2 {
         RunState s = transformer.state;
         int dim = p.dim;
 
+
         TaskGraph taskGraph = new TaskGraph("s0")
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION,  s.x)
-                .transferToDevice(DataTransferMode.FIRST_EXECUTION,  w.wclsAsPrimitive)
-//                .task("t0", Llama2::matmul2,s.logits, s.x, w.wclsAsPrimitive, dim, p.vocab_size)
-                .task("t0", Llama2::matmul2,s.logits, s.x, w.wclsAsPrimitive, dim, p.vocab_size)
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION,  w.vectorFloat8Array)
+                .task("t0", Llama2::matmul2,s.logits, s.x, w.vectorFloat8Array, dim, p.vocab_size)
+//                .task("t0", Llama2::matmuxl2,s.logits, s.x, w.fa, dim, p.vocab_size)
                 .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
 
         int kv_dim = (p.dim * p.n_kv_heads) / p.n_heads;
         ArrayList<TornadoExecutionPlan> te = new ArrayList<>();
 
-        for(int i = 0; i < p.n_layers; i++) {
-            TaskGraph taskGraph0 = new TaskGraph("sx" + i)
-                    .transferToDevice(DataTransferMode.EVERY_EXECUTION,  s.xb)
-                    .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightsAsPrimitivesQ.get(i),  w.weightsAsPrimitivesK.get(i),  w.weightsAsPrimitivesV.get(i))
-                    .task("t1", Llama2::matmul2,s.q, s.xb, w.weightsAsPrimitivesQ.get(i), dim, dim)
-                    .task("t2", Llama2::matmul2,s.k, s.xb, w.weightsAsPrimitivesK.get(i), dim, kv_dim)
-                    .task("t3", Llama2::matmul2,s.v, s.xb, w.weightsAsPrimitivesV.get(i), dim, kv_dim)
-                    .transferToHost(DataTransferMode.EVERY_EXECUTION,s.q, s.k, s.v);
-            te.add(new TornadoExecutionPlan(taskGraph0.snapshot()));
-        }
+//        for(int i = 0; i < p.n_layers; i++) {
+//            TaskGraph taskGraph0 = new TaskGraph("sx" + i)
+//                    .transferToDevice(DataTransferMode.EVERY_EXECUTION,  s.xb)
+//                    .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightsAsPrimitivesQ.get(i),  w.weightsAsPrimitivesK.get(i),  w.weightsAsPrimitivesV.get(i))
+//                    .task("t1", Llama2::matmul2,s.q, s.xb, w.weightsAsPrimitivesQ.get(i), dim, dim)
+//                    .task("t2", Llama2::matmul2,s.k, s.xb, w.weightsAsPrimitivesK.get(i), dim, kv_dim)
+//                    .task("t3", Llama2::matmul2,s.v, s.xb, w.weightsAsPrimitivesV.get(i), dim, kv_dim)
+//                    .transferToHost(DataTransferMode.EVERY_EXECUTION,s.q, s.k, s.v);
+//            te.add(new TornadoExecutionPlan(taskGraph0.snapshot()));
+//        }
 
         te.add(new TornadoExecutionPlan(taskGraph.snapshot()));
         //init tornado
@@ -887,13 +843,7 @@ class Llama2 {
 
 
     // ----------------------------------------------------------------------------
-    // int main
 
-//    final class  Generator {
-//
-//        transformer, tokenizer, sampler, prompt, steps
-//        Generator
-//    }
 
     static void error_usage() {
         System.err.println("Usage:   java Llama2 <checkpoint> [options]");
@@ -960,7 +910,6 @@ class Llama2 {
         if (steps <= 0) {
             steps = 0;
         }
-//        staticMethod();
 
 
         // build the Transformer via the model .bin file
@@ -970,8 +919,12 @@ class Llama2 {
         }
 
 
+
+
         // build the Tokenizer via the tokenizer .bin file
+
         Tokenizer tokenizer = new Tokenizer(tokenizer_path, transformer.config.vocab_size);
+
 
         // build the Sampler
         Sampler sampler = new Sampler(transformer.config.vocab_size, temperature, topp, rng_seed);
@@ -986,5 +939,4 @@ class Llama2 {
             }
         }
     }
-
 }

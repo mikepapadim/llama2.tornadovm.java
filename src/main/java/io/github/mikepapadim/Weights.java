@@ -1,7 +1,10 @@
 package io.github.mikepapadim;
 
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+import uk.ac.manchester.tornado.api.types.collections.VectorFloat4;
 import uk.ac.manchester.tornado.api.types.collections.VectorFloat8;
+import uk.ac.manchester.tornado.api.types.vectors.Float4;
+import uk.ac.manchester.tornado.api.types.vectors.Float8;
 
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
@@ -34,6 +37,9 @@ public class Weights {
      float[] wclsAsPrimitive;
 
      VectorFloat8 wclsAsPrimitiveV;
+
+     VectorFloat8 vectorFloat8Array;
+     FloatArray fa;
 
     ArrayList<float[]> weightsAsPrimitivesK;
     ArrayList<float[]> weightsAsPrimitivesV;
@@ -102,15 +108,47 @@ public class Weights {
         this.wclsAsPrimitive = new float[wcls.remaining()];
         wcls.get(wclsAsPrimitive);
 
-        FloatArray d = FloatArray.fromArray(wclsAsPrimitive);
-        wclsAsPrimitiveV = new VectorFloat8(d);
+       this.fa = FloatArray.fromArray(wclsAsPrimitive);
+      final int sizee = fa.getSize()/8;
+        this.wclsAsPrimitiveV = new VectorFloat8(9216000/8);
 
-        for (int i  =0 ; i < wclsAsPrimitiveV.size(); i++) {
-//            System.out.println("V " + wclsAsPrimitiveV.get(i).toString());
-//            System.out.println("V " + wclsAsPrimitiveV.get(i));
+
+        System.out.println("fa " + fa.getSize());
+        System.out.println("vECTOR " + wclsAsPrimitiveV.getLength());
+
+        int faSize = fa.getSize();
+
+//        for (int i = 0; i < faSize/8; i += 8) {
+////            System.out.println("i " + i);
+//
+//            // Ensure that you don't go out of bounds
+////            if (i + 7 < faSize) {
+////            System.out.println("i " + i);
+//                wclsAsPrimitiveV.set(i , new Float8(fa.get(i), fa.get(i + 1), //
+//                                             fa.get(i + 2), fa.get(i + 3), //
+//                                             fa.get(i + 4), fa.get(i + 5), //
+//                                             fa.get(i + 6), fa.get(i + 7)));
+////            }
+//        }
+
+        int numElements = fa.getSize();
+        int numFloat8Vectors = numElements / 8;
+
+        // Create an array to store the Float8 vectors
+         this.vectorFloat8Array = new VectorFloat8(numFloat8Vectors);
+
+        // Iterate over fa to create Float8 vectors
+        for (int i = 0; i < numFloat8Vectors; i++) {
+            // Extract a subset of eight elements from fa
+            Float8 float8 = new Float8();
+            for (int j = 0; j < 8; j++) {
+                float8.set(j, fa.get(i * 8 + j));
+            }
+
+            // Create a VectorFloat8 using the extracted Float8
+            vectorFloat8Array.set(i,float8);
         }
 
-//        System.exit(1);
         this.weightsAsPrimitivesK = normalizeInputWeight(wk);
         this.weightsAsPrimitivesV = normalizeInputWeight(wv);
         this.weightsAsPrimitivesQ = normalizeInputWeight(wq);
