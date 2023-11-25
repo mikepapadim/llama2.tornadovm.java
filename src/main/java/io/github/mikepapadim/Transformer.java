@@ -9,8 +9,6 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 
-import static java.lang.foreign.Arena.*;
-
 public class Transformer {
     final Config config; // the hyperparameters of the architecture (the blueprint)
     final Weights weights; // the weights of the model
@@ -20,12 +18,11 @@ public class Transformer {
     final MemorySegment data; // memory mapped data pointer
     final long file_size; // size of the checkpoint file in bytes
 
-
     public Transformer(String checkpointPath) throws IOException {
         try (FileChannel fileChannel = FileChannel.open(Paths.get(checkpointPath), StandardOpenOption.READ)) {
             this.file_size = fileChannel.size();
             this.memoryArena = Arena.ofAuto();
-            this.data =memoryArena.allocate(this.file_size, 1);
+            this.data = memoryArena.allocate(this.file_size, 1);
 
             // Read the entire file into the MemorySegment
             fileChannel.read(this.data.asByteBuffer());

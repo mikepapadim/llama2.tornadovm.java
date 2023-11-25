@@ -1,6 +1,6 @@
 package io.github.mikepapadim;
 
-public class  Sampler {
+public class Sampler {
     final int vocab_size;
     final int[] probindex; // buffer used in top-p sampling
     final float temperature;

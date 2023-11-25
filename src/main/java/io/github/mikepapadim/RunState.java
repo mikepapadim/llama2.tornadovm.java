@@ -1,5 +1,8 @@
 package io.github.mikepapadim;
 
+import uk.ac.manchester.tornado.api.types.collections.VectorFloat4;
+import uk.ac.manchester.tornado.api.types.collections.VectorFloat8;
+
 public class RunState {
     // current wave of activations
     final float[] x; // activation at current time stamp (dim,)
@@ -13,12 +16,17 @@ public class RunState {
     final float[] att; // buffer for scores/attention values (n_heads, seq_len)
     final float[] logits; // output logits
     // kv cache
-    final float[][] key_cache;   // (layer, seq_len, dim)
+    final float[][] key_cache; // (layer, seq_len, dim)
     final float[][] value_cache; // (layer, seq_len, dim)
+
+    final VectorFloat8 xVectorFloat8; // activation at current time stamp (dim,) in VectorFloat8
+    final VectorFloat4 xVectorFloat4; // activation at current time stamp (dim,) in VectorFloat4
 
     RunState(Config config) {
         int kv_dim = (config.dim * config.n_kv_heads) / config.n_heads;
         this.x = new float[config.dim];
+        this.xVectorFloat8 = new VectorFloat8(config.dim / 8);
+        this.xVectorFloat4 = new VectorFloat4(config.dim / 4);
         this.xb = new float[config.dim];
         this.xb2 = new float[config.dim];
         this.hb = new float[config.hidden_dim];
