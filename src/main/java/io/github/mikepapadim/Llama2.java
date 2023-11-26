@@ -12,333 +12,29 @@ package io.github.mikepapadim;
 // Transformer model
 
 import java.io.IOException;
-import java.lang.foreign.MemorySegment;
-import java.nio.ByteOrder;
-import java.nio.FloatBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
-import java.util.stream.IntStream;
 
-import jdk.incubator.vector.FloatVector;
-import jdk.incubator.vector.VectorOperators;
-import jdk.incubator.vector.VectorSpecies;
 import uk.ac.manchester.tornado.api.TaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
-import uk.ac.manchester.tornado.api.annotations.Parallel;
 import uk.ac.manchester.tornado.api.enums.DataTransferMode;
-import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
-import uk.ac.manchester.tornado.api.types.collections.VectorFloat4;
-import uk.ac.manchester.tornado.api.types.collections.VectorFloat8;
-import uk.ac.manchester.tornado.api.types.vectors.Float4;
-import uk.ac.manchester.tornado.api.types.vectors.Float8;
 
 class Llama2 {
 
     // ----------------------------------------------------------------------------
     // neural net blocks; the dynamics of the Transformer
 
-    static final boolean USE_VECTOR_API = "true".equalsIgnoreCase(System.getProperty("llama2.VectorAPI", "true"));
-    static final boolean USE_VECTORFLOAT8 = "true".equalsIgnoreCase(System.getProperty("llama2.VectorFloat8", "false"));
-    static final boolean USE_VECTORFLOAT4 = "true".equalsIgnoreCase(System.getProperty("llama2.VectorFloat4", "false"));
+    static final boolean USE_VECTOR_API = getBooleanProperty("VectorAPI", true);
+    static final boolean USE_VECTORFLOAT8 = getBooleanProperty("VectorFloat8", true);
+    static final boolean USE_VECTORFLOAT4 = getBooleanProperty("VectorFloat4", false);
 
-    static void rmsnorm(float[] o, float[] x, FloatBuffer weight, int size) {
-        // calculate sum of squares
-        float ss = 0.0f;
-        for (int j = 0; j < size; j++) {
-            ss += x[j] * x[j];
-        }
-        ss /= size;
-        ss += 1e-5f;
-        ss = 1.0f / (float) Math.sqrt(ss);
-        // normalize and scale
-        for (int j = 0; j < size; j++) {
-            o[j] = weight.get(j) * (ss * x[j]);
-        }
+    private static boolean getBooleanProperty(String propertyName, boolean defaultValue) {
+        return "true".equalsIgnoreCase(System.getProperty("llama2." + propertyName, String.valueOf(defaultValue)));
     }
-
-    static void softmax(float[] x, int xOffset, int size) {
-        // find max value (for numerical stability)
-        float max_val = x[0 + xOffset];
-        for (int i = 1; i < size; i++) {
-            if (x[i + xOffset] > max_val) {
-                max_val = x[i + xOffset];
-            }
-        }
-        // exp and sum
-        float sum = 0.0f;
-        for (int i = 0; i < size; i++) {
-            x[i + xOffset] = (float) Math.exp(x[i + xOffset] - max_val);
-            sum += x[i + xOffset];
-        }
-        // normalize
-        for (int i = 0; i < size; i++) {
-            x[i + xOffset] /= sum;
-        }
-    }
-
-    static void matmul(float[] xout, float[] x, FloatBuffer w, int n, int d) {
-        // W (d,n) @ x (n,) -> xout (d,)
-        // by far the most amount of time is spent inside this little function
-        MemorySegment wSegment = MemorySegment.ofBuffer(w);
-        IntStream.range(0, d).parallel().forEach(i -> {
-            float val = 0f;
-            int j = 0;
-            if (USE_VECTOR_API) {
-                VectorSpecies<Float> species = FloatVector.SPECIES_256;
-                FloatVector sum0 = FloatVector.zero(species);
-                FloatVector sum1 = FloatVector.zero(species);
-                FloatVector sum2 = FloatVector.zero(species);
-                FloatVector sum3 = FloatVector.zero(species);
-                int width = species.length();
-                int upperBound = n - n % (4 * width);
-                for (; j < upperBound; j += 4 * width) {
-                    var wj0 = FloatVector.fromMemorySegment(species, wSegment, (i * n + j + 0 * width) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
-                    var wj1 = FloatVector.fromMemorySegment(species, wSegment, (i * n + j + 1 * width) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
-                    var wj2 = FloatVector.fromMemorySegment(species, wSegment, (i * n + j + 2 * width) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
-                    var wj3 = FloatVector.fromMemorySegment(species, wSegment, (i * n + j + 3 * width) * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
-                    var xj0 = FloatVector.fromArray(species, x, j + 0 * width);
-                    var xj1 = FloatVector.fromArray(species, x, j + 1 * width);
-                    var xj2 = FloatVector.fromArray(species, x, j + 2 * width);
-                    var xj3 = FloatVector.fromArray(species, x, j + 3 * width);
-                    sum0 = wj0.fma(xj0, sum0);
-                    sum1 = wj1.fma(xj1, sum1);
-                    sum2 = wj2.fma(xj2, sum2);
-                    sum3 = wj3.fma(xj3, sum3);
-                }
-                val = sum0.add(sum1).add(sum2).add(sum3).reduceLanes(VectorOperators.ADD);
-            }
-
-            // Graal's auto-vectorization.
-            int upperBound = n & ~3;
-            float[] sum = new float[4];
-            for (; j < upperBound; j += sum.length) {
-                sum[0] += w.get(i * n + j + 0) * x[j + 0];
-                sum[1] += w.get(i * n + j + 1) * x[j + 1];
-                sum[2] += w.get(i * n + j + 2) * x[j + 2];
-                sum[3] += w.get(i * n + j + 3) * x[j + 3];
-            }
-            val += sum[0] + sum[1] + sum[2] + sum[3];
-
-            for (; j < n; j++) {
-                val += w.get(i * n + j) * x[j];
-            }
-            xout[i] = val;
-        });
-    }
-
-    static void matrixVectorSimple(float[] xout, float[] x, FloatArray w, int n, int d) {
-        for (@Parallel int i = 0; i < d; i++) {
-            float val = 0f;
-            for (int j = 0; j < n; j++) {
-                val += w.get(i * n + j) * x[j];
-            }
-            xout[i] = val;
-        }
-    }
-
-    static void matrixVectorFloat8(float[] xout, VectorFloat8 x, VectorFloat8 w, int n, int d) {
-        for (@Parallel int i = 0; i < d; i++) {
-            float val = 0f;
-
-            for (int j = 0; j < n; j += 8) {
-                Float8 xv8 = x.get(j / 8);
-                Float8 wv8 = w.get(i * (n / 8) + j / 8);
-
-                val += Float8.dot(wv8, xv8);
-
-            }
-
-            xout[i] = val;
-        }
-    }
-
-    static void matrixVectorFloat4(float[] xout, VectorFloat4 x, VectorFloat4 w, int n, int d) {
-        for (@Parallel int i = 0; i < d; i++) {
-            float val = 0f;
-
-            for (int j = 0; j < n; j += 4) {
-                Float4 xv4 = x.get(j / 4);
-                Float4 wv4 = w.get(i * (n / 4) + j / 4);
-                val += Float4.dot(wv4, xv4);
-            }
-
-            xout[i] = val;
-        }
-    }
-
-    static float[] forward(Transformer transformer, int token, int pos, ArrayList<TornadoExecutionPlan> executionPlan) {
-        // a few convenience variables
-        Config p = transformer.config;
-        Weights w = transformer.weights;
-        RunState s = transformer.state;
-        int dim = p.dim;
-        int hidden_dim = p.hidden_dim;
-        int head_size = p.head_size;
-        int kv_dim = (p.dim * p.n_kv_heads) / p.n_heads;
-        int kv_mul = p.n_heads / p.n_kv_heads; // integer multiplier of the kv sharing in multiquery
-
-        // copy the token embedding into x
-        w.token_embedding_table.get(token * dim, s.x, 0, dim);
-
-        // forward all the layers
-
-        for (int l = 0; l < p.n_layers; l++) {
-
-            // attention rmsnorm
-            rmsnorm(s.xb, s.x, w.rms_att_weight[l], dim);
-
-            // qkv matmuls for this position
-            matmul(s.q, s.xb, w.wq[l], dim, dim);
-            matmul(s.k, s.xb, w.wk[l], dim, kv_dim);
-            matmul(s.v, s.xb, w.wv[l], dim, kv_dim);
-
-            // RoPE relative positional encoding: complex-valued rotate q and k in each head
-            for (int i = 0; i < dim; i += 2) {
-                int head_dim = i % head_size;
-                float freq = (float) (1.0 / Math.pow(10000.0f, head_dim / (float) head_size));
-                float val = pos * freq;
-                float fcr = (float) Math.cos(val);
-                float fci = (float) Math.sin(val);
-                int rotn = i < kv_dim ? 2 : 1; // how many vectors? 2 = q & k, 1 = q only
-                for (int v = 0; v < rotn; v++) {
-                    float[] vec = v == 0 ? s.q : s.k; // the vector to rotate (query or key)
-                    float v0 = vec[i];
-                    float v1 = vec[i + 1];
-                    vec[i] = v0 * fcr - v1 * fci;
-                    vec[i + 1] = v0 * fci + v1 * fcr;
-                }
-            }
-
-            // save key,value at this time step (pos) to our kv cache
-            // int loff = l * p.seq_len * kv_dim; // kv cache layer offset for convenience
-            System.arraycopy(s.k, 0, s.key_cache[l], pos * kv_dim, kv_dim);
-            System.arraycopy(s.v, 0, s.value_cache[l], pos * kv_dim, kv_dim);
-
-            final int curLayer = l;
-
-            // multihead attention. iterate over all heads
-            IntStream.range(0, p.n_heads).parallel().forEach(h -> {
-                // get the query vector for this head
-                // float* q = s.q + h * head_size;
-                int qOffset = h * head_size;
-
-                // attention scores for this head
-                // float* att = s.att + h * p.seq_len;
-                int attOffset = h * p.seq_len;
-
-                // iterate over all timesteps, including the current one
-                for (int t = 0; t <= pos; t++) {
-                    // get the key vector for this head and at this timestep
-                    // float* k = s->key_cache + loff + t * kv_dim + (h / kv_mul) * head_size;
-                    int keyCacheOffset = t * kv_dim + (h / kv_mul) * head_size;
-                    // calculate the attention score as the dot product of q and k
-                    float score = 0.0f;
-                    for (int i = 0; i < head_size; i++) {
-                        score += s.q[qOffset + i] * s.key_cache[curLayer][keyCacheOffset + i];
-                    }
-                    score /= (float) Math.sqrt(head_size);
-                    // save the score to the attention buffer
-                    s.att[attOffset + t] = score;
-                }
-
-                // softmax the scores to get attention weights, from 0..pos inclusively
-                softmax(s.att, attOffset, pos + 1);
-
-                // weighted sum of the values, store back into xb
-                // float* xb = s.xb + h * head_size;
-                int xbOffset = h * head_size;
-                // memset(xb, 0, head_size * sizeof(float));
-                Arrays.fill(s.xb, xbOffset, xbOffset + head_size, 0f);
-
-                for (int t = 0; t <= pos; t++) {
-                    // get the value vector for this head and at this timestep
-                    // float* v = s->value_cache + loff + t * kv_dim + (h / kv_mul) * head_size;
-                    int vOffset = t * kv_dim + (h / kv_mul) * head_size;
-                    // get the attention weight for this timestep
-                    float a = s.att[attOffset + t];
-                    // accumulate the weighted value inconfigto xb
-                    for (int i = 0; i < head_size; i++) {
-                        s.xb[xbOffset + i] += a * s.value_cache[curLayer][vOffset + i];
-                    }
-                }
-            });
-
-            // final matmul to get the output of the attention
-            matmul(s.xb2, s.xb, w.wo[l], dim, dim);
-
-            residualConnection(s.x, s.xb2, dim);
-
-            // ffn rmsnorm
-            rmsnorm(s.xb, s.x, w.rms_ffn_weight[l], dim);
-
-            // Now for FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
-            // first calculate self.w1(x) and self.w3(x)
-            matmul(s.hb, s.xb, w.w1[l], dim, p.hidden_dim);
-            matmul(s.hb2, s.xb, w.w3[l], dim, p.hidden_dim);
-
-            fusedSiluEwiseMul(hidden_dim, s.hb, s.hb2);
-
-            // final matmul to get the output of the ffn
-            matmul(s.xb, s.hb, w.w2[l], p.hidden_dim, dim);
-
-            residualConnection(s.x, s.xb, dim);
-        }
-
-        // final rmsnorm
-        rmsnorm(s.x, s.x, w.rms_final_weight, dim);
-
-        // convertToVectorFloat8(s.xV8, s.x);
-        convertToVectorFloat4(s.xVectorFloat4, s.x);
-
-        executionPlan.get(executionPlan.size() - 1).withDevice(TornadoExecutionPlan.getDevice(0, 0)).execute();
-
-        return s.logits;
-    }
-
-    static void convertToVectorFloat8(VectorFloat8 destination, float[] source) {
-        int numVectors = source.length / 8;
-        for (int i = 0; i < numVectors; i++) {
-            Float8 float8 = new Float8();
-            for (int j = 0; j < 8; j++) {
-                float8.set(j, source[i * 8 + j]);
-            }
-            destination.set(i, float8);
-        }
-    }
-
-    static void convertToVectorFloat4(VectorFloat4 destination, float[] source) {
-        int numVectors = source.length / 4;
-        for (int i = 0; i < numVectors; i++) {
-            Float4 float4 = new Float4();
-            for (int j = 0; j < 4; j++) {
-                float4.set(j, source[i * 4 + j]);
-            }
-            destination.set(i, float4);
-        }
-    }
-
-    // SwiGLU non-linearity
-    static void fusedSiluEwiseMul(int hidden_dim, float[] out, float[] hb2) {
-        for (int i = 0; i < hidden_dim; i++) {
-            float val = out[i];
-            // silu(x)=x*σ(x), where σ(x) is the logistic sigmoid
-            val *= (1.0f / (1.0f + Math.exp(-val)));
-            // elementwise multiply with w3(x)
-            out[i] = val * hb2[i];
-        }
-    }
-
-    static void residualConnection(float[] s, float[] xb2, int dim) {
-        for (int i = 0; i < dim; i++) {
-            s[i] = s[i] + xb2[i];
-        }
-    }
-    // ----------------------------------------------------------------------------
 
     // The Byte Pair Encoding (BPE) Tokenizer that translates strings <-> tokens
 
@@ -492,9 +188,43 @@ class Llama2 {
         return System.nanoTime() / 1_000_000;
     }
 
+    private static ArrayList<TornadoExecutionPlan> createTornadoExecutionPlan(Transformer transformer) {
+        Config p = transformer.config;
+        Weights w = transformer.weights;
+        RunState s = transformer.state;
+        int dim = p.dim;
+        TaskGraph taskGraph = null;
+
+        if (USE_VECTORFLOAT8) {
+            taskGraph = new TaskGraph("s0") //
+                    .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.xVectorFloat8) //
+                    .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInVectorFloat8)
+                    //
+                    .task("t0", MatrixVectorCollection::matrixVectorFloat8, s.logits, s.xVectorFloat8, w.weightInVectorFloat8, dim, p.vocab_size) //
+                    .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
+        } else if (USE_VECTORFLOAT4) {
+            taskGraph = new TaskGraph("s0") //
+                    .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.xVectorFloat4) //
+                    .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInVectorFloat4)
+                    //
+                    .task("t0", MatrixVectorCollection::matrixVectorFloat4, s.logits, s.xVectorFloat4, w.weightInVectorFloat4, dim, p.vocab_size) //
+                    .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
+        } else {
+            taskGraph = new TaskGraph("s0") //
+                    .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.x) //
+                    .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInFloatArray) //
+                    .task("t0", MatrixVectorCollection::matrixVectorSimple, s.logits, s.x, w.weightInFloatArray, dim, p.vocab_size) //
+                    .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
+        }
+
+        ArrayList<TornadoExecutionPlan> te = new ArrayList<>();
+        te.add(new TornadoExecutionPlan(taskGraph.snapshot()));
+
+        return te;
+    }
+
     // ----------------------------------------------------------------------------
     // generation loop
-
     static void generate(Transformer transformer, Tokenizer tokenizer, Sampler sampler, String prompt, int steps) {
         String empty_prompt = "";
         if (prompt == null) {
@@ -510,54 +240,19 @@ class Llama2 {
             System.exit(1);
         }
 
-        Config p = transformer.config;
-        Weights w = transformer.weights;
-        RunState s = transformer.state;
-        int dim = p.dim;
+        // Create the TornadoVM execution plan
+        ArrayList<TornadoExecutionPlan> te = createTornadoExecutionPlan(transformer);
 
-        TaskGraph taskGraph = new TaskGraph("s0").transferToDevice(DataTransferMode.EVERY_EXECUTION, s.xVectorFloat4).transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInVectorFloat4)
-                .task("t0", Llama2::matrixVectorFloat4, s.logits, s.xVectorFloat4, w.weightInVectorFloat4, dim, p.vocab_size)
-                // .task("t0", Llama2::matmuxl2,s.logits, s.x, w.fa, dim, p.vocab_size)
-                .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
-
-        int kv_dim = (p.dim * p.n_kv_heads) / p.n_heads;
-        ArrayList<TornadoExecutionPlan> te = new ArrayList<>();
-
-        // for(int i = 0; i < p.n_layers; i++) {
-        // TaskGraph taskGraph0 = new TaskGraph("sx" + i)
-        // .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.xb)
-        // .transferToDevice(DataTransferMode.FIRST_EXECUTION,
-        // w.weightsAsPrimitivesQ.get(i), w.weightsAsPrimitivesK.get(i),
-        // w.weightsAsPrimitivesV.get(i))
-        // .task("t1", Llama2::matmul2,s.q, s.xb, w.weightsAsPrimitivesQ.get(i), dim,
-        // dim)
-        // .task("t2", Llama2::matmul2,s.k, s.xb, w.weightsAsPrimitivesK.get(i), dim,
-        // kv_dim)
-        // .task("t3", Llama2::matmul2,s.v, s.xb, w.weightsAsPrimitivesV.get(i), dim,
-        // kv_dim)
-        // .transferToHost(DataTransferMode.EVERY_EXECUTION,s.q, s.k, s.v);
-        // te.add(new TornadoExecutionPlan(taskGraph0.snapshot()));
-        // }
-
-        te.add(new TornadoExecutionPlan(taskGraph.snapshot()));
-        // init tornado
-        // start the main loop
         long start = 0; // used to time our code, only initialized after first iteration
         int next; // will store the next token in the sequence
         int token = prompt_tokens[0]; // kick off with the first token in the prompt
         int pos = 0; // position in the sequence
         while (pos < steps) {
             // forward the transformer to get logits for the next token
-            float[] logits = forward(transformer, token, pos, te);
+            float[] logits = InferenceEngine.forward(transformer, token, pos, te);
 
-            // advance the state machine
-            if (pos < num_prompt_tokens - 1) {
-                // if we are still processing the input prompt, force the next prompt token
-                next = prompt_tokens[pos + 1];
-            } else {
-                // otherwise sample the next token from the logits
-                next = sample(sampler, logits);
-            }
+            // Advance the state machine
+            next = (pos < num_prompt_tokens - 1) ? prompt_tokens[pos + 1] : sample(sampler, logits);
             pos++;
 
             // data-dependent terminating condition: the BOS (=1) token delimits sequences
@@ -703,7 +398,7 @@ class Llama2 {
                 logits[q] /= sampler.temperature;
             }
             // apply softmax to the logits to get the probabilities for next token
-            softmax(logits, 0, sampler.vocab_size);
+            InferenceEngine.softmax(logits, 0, sampler.vocab_size);
             // flip a (float) coin (this is our source of entropy for sampling)
             float coin = sampler.random_f32();
             // we sample from this distribution to get the next token
@@ -802,7 +497,7 @@ class Llama2 {
             }
 
             // forward the transformer to get logits for the next token
-            float[] logits = forward(transformer, token, pos, null);
+            float[] logits = InferenceEngine.forward(transformer, token, pos, null);
             next = sample(sampler, logits);
             pos++;
 

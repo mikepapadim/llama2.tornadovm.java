@@ -30,12 +30,12 @@ public class Weights {
     final FloatBuffer rms_final_weight; // (dim,)
     // (optional) classifier weights for the logits, on the last layer
     final FloatBuffer wcls; // (vocab_size, dim)
-    ArrayList<float[]> weights_rc;
     float[] wclsAsPrimitive;
 
-    VectorFloat8 weightInVectorFloat8;
-    VectorFloat4 weightInVectorFloat4;
-    FloatArray weightInFloatArray;
+    // Datastructures for TornadoVM
+    VectorFloat8 weightInVectorFloat8; // vocab in VectorFloat8
+    VectorFloat4 weightInVectorFloat4; // vocab in VectorFloat4
+    FloatArray weightInFloatArray; // vocab in FloatArray
 
     ArrayList<float[]> weightsAsPrimitivesK;
     ArrayList<float[]> weightsAsPrimitivesV;
@@ -123,9 +123,6 @@ public class Weights {
 
         return vectorFloat8Array;
     }
-
-    // ----------------------------------------------------------------------------
-    // initialization: read from checkpoint
 
     private VectorFloat4 createVectorFloat4Array(FloatArray fa) {
         int numElements = fa.getSize();
