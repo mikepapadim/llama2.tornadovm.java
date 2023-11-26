@@ -29,7 +29,7 @@ class Llama2 {
     // neural net blocks; the dynamics of the Transformer
 
     static final boolean USE_VECTOR_API = getBooleanProperty("VectorAPI", true);
-    static final boolean USE_VECTORFLOAT8 = getBooleanProperty("VectorFloat8", true);
+    static final boolean USE_VECTORFLOAT8 = getBooleanProperty("VectorFloat8", false);
     static final boolean USE_VECTORFLOAT4 = getBooleanProperty("VectorFloat4", false);
 
     private static boolean getBooleanProperty(String propertyName, boolean defaultValue) {
