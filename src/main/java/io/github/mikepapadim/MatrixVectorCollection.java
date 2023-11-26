@@ -16,6 +16,10 @@ import uk.ac.manchester.tornado.api.types.vectors.Float4;
 import uk.ac.manchester.tornado.api.types.vectors.Float8;
 
 public class MatrixVectorCollection {
+
+    public MatrixVectorCollection() {
+    }
+
     static void matmul(float[] xout, float[] x, FloatBuffer w, int n, int d) {
         // W (d,n) @ x (n,) -> xout (d,)
         // by far the most amount of time is spent inside this little function
