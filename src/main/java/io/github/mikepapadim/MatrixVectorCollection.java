@@ -83,9 +83,10 @@ public class MatrixVectorCollection {
     static void matrixVectorFloat8(float[] xout, VectorFloat8 x, VectorFloat8 w, int n, int d) {
         for (@Parallel int i = 0; i < d; i++) {
             float val = 0f;
-            for (int j = 0; j < n; j += 8) {
-                Float8 xv8 = x.get(j / 8);
-                Float8 wv8 = w.get(i * (n / 8) + j / 8);
+            int vectorLaneWidth = x.vectorWidth();
+            for (int j = 0; j < n; j += vectorLaneWidth) {
+                Float8 xv8 = x.get(j / vectorLaneWidth);
+                Float8 wv8 = w.get(i * (n / vectorLaneWidth) + j / vectorLaneWidth);
                 val += Float8.dot(wv8, xv8);
             }
             xout[i] = val;
@@ -95,9 +96,10 @@ public class MatrixVectorCollection {
     static void matrixVectorFloat4(float[] xout, VectorFloat4 x, VectorFloat4 w, int n, int d) {
         for (@Parallel int i = 0; i < d; i++) {
             float val = 0f;
-            for (int j = 0; j < n; j += 4) {
-                Float4 xv4 = x.get(j / 4);
-                Float4 wv4 = w.get(i * (n / 4) + j / 4);
+            int vectorLaneWidth = x.vectorWidth();
+            for (int j = 0; j < n; j += vectorLaneWidth) {
+                Float4 xv4 = x.get(j / vectorLaneWidth);
+                Float4 wv4 = w.get(i * (n / vectorLaneWidth) + j / vectorLaneWidth);
                 val += Float4.dot(wv4, xv4);
             }
             xout[i] = val;

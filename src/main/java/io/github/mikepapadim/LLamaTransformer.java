@@ -133,11 +133,11 @@ public class LLamaTransformer {
         // final rmsnorm
         rmsnorm(s.x, s.x, w.rms_final_weight, dim);
 
-        // if (Llama2.USE_VECTORFLOAT8) {
-        convertToVectorFloat8(s.xVectorFloat8, s.x);
-        // } else if (Llama2.USE_VECTORFLOAT4) {
-        // convertToVectorFloat4(s.xVectorFloat4, s.x);
-        // }
+        if (Llama2.USE_VECTORFLOAT8) {
+            convertToVectorFloat8(s.xVectorFloat8, s.x);
+        } else if (Llama2.USE_VECTORFLOAT4) {
+            convertToVectorFloat4(s.xVectorFloat4, s.x);
+        }
 
         executionPlan.get(executionPlan.size() - 1).withDevice(TornadoExecutionPlan.getDevice(0, 0)).execute();
 
@@ -145,22 +145,24 @@ public class LLamaTransformer {
     }
 
     static void convertToVectorFloat8(VectorFloat8 destination, float[] source) {
-        int numVectors = source.length / 8;
+        int vectorLaneWidth = destination.vectorWidth();
+        int numVectors = source.length / vectorLaneWidth;
         for (int i = 0; i < numVectors; i++) {
             Float8 float8 = new Float8();
-            for (int j = 0; j < 8; j++) {
-                float8.set(j, source[i * 8 + j]);
+            for (int j = 0; j < vectorLaneWidth; j++) {
+                float8.set(j, source[i * vectorLaneWidth + j]);
             }
             destination.set(i, float8);
         }
     }
 
     static void convertToVectorFloat4(VectorFloat4 destination, float[] source) {
-        int numVectors = source.length / 4;
+        int vectorLaneWidth = destination.vectorWidth();
+        int numVectors = source.length / vectorLaneWidth;
         for (int i = 0; i < numVectors; i++) {
             Float4 float4 = new Float4();
-            for (int j = 0; j < 4; j++) {
-                float4.set(j, source[i * 4 + j]);
+            for (int j = 0; j < vectorLaneWidth; j++) {
+                float4.set(j, source[i * vectorLaneWidth + j]);
             }
             destination.set(i, float4);
         }
