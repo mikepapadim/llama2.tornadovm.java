@@ -5,14 +5,17 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.stream.IntStream;
 
+import uk.ac.manchester.tornado.api.GridScheduler;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
+import uk.ac.manchester.tornado.api.types.collections.VectorFloat16;
 import uk.ac.manchester.tornado.api.types.collections.VectorFloat4;
 import uk.ac.manchester.tornado.api.types.collections.VectorFloat8;
+import uk.ac.manchester.tornado.api.types.vectors.Float16;
 import uk.ac.manchester.tornado.api.types.vectors.Float4;
 import uk.ac.manchester.tornado.api.types.vectors.Float8;
 
 public class InferenceEngine {
-    static float[] forward(Transformer transformer, int token, int pos, ArrayList<TornadoExecutionPlan> executionPlan) {
+    static float[] forward(Transformer transformer, int token, int pos, ArrayList<TornadoExecutionPlan> executionPlan, GridScheduler gridScheduler) {
         // a few convenience variables
         Config p = transformer.config;
         Weights w = transformer.weights;
@@ -34,9 +37,9 @@ public class InferenceEngine {
             rmsnorm(s.xb, s.x, w.rms_att_weight[l], dim);
 
             // qkv matmuls for this position
-            MatrixVectorCollection.matmul(s.q, s.xb, w.wq[l], dim, dim);
-            MatrixVectorCollection.matmul(s.k, s.xb, w.wk[l], dim, kv_dim);
-            MatrixVectorCollection.matmul(s.v, s.xb, w.wv[l], dim, kv_dim);
+            MatrixVectorCollection.matrixVectorMultiply(s.q, s.xb, w.wq[l], dim, dim);
+            MatrixVectorCollection.matrixVectorMultiply(s.k, s.xb, w.wk[l], dim, kv_dim);
+            MatrixVectorCollection.matrixVectorMultiply(s.v, s.xb, w.wv[l], dim, kv_dim);
 
             // RoPE relative positional encoding: complex-valued rotate q and k in each head
             for (int i = 0; i < dim; i += 2) {
@@ -133,15 +136,28 @@ public class InferenceEngine {
         // final rmsnorm
         rmsnorm(s.x, s.x, w.rms_final_weight, dim);
 
-        if (Llama2.USE_VECTORFLOAT8) {
+        if (Llama2.USE_VECTORFLOAT16) {
+            convertToVectorFloat16(s.xVectorFloat16, s.x);
+        } else if (Llama2.USE_VECTORFLOAT8) {
             convertToVectorFloat8(s.xVectorFloat8, s.x);
         } else if (Llama2.USE_VECTORFLOAT4) {
             convertToVectorFloat4(s.xVectorFloat4, s.x);
         }
 
-        executionPlan.get(executionPlan.size() - 1).withDevice(TornadoExecutionPlan.getDevice(0, 0)).execute();
+        executionPlan.get(executionPlan.size() - 1).withGridScheduler(gridScheduler).execute();
 
         return s.logits;
+    }
+
+    static void convertToVectorFloat16(VectorFloat16 destination, float[] source) {
+        int numVectors = source.length / destination.vectorWidth();
+        for (int i = 0; i < numVectors; i++) {
+            Float16 float16 = new Float16();
+            for (int j = 0; j < destination.vectorWidth(); j++) {
+                float16.set(j, source[i * destination.vectorWidth() + j]);
+            }
+            destination.set(i, float16);
+        }
     }
 
     static void convertToVectorFloat8(VectorFloat8 destination, float[] source) {
@@ -182,6 +198,19 @@ public class InferenceEngine {
             s[i] = s[i] + xb2[i];
         }
     }
+
+    // static void rmsnorm(float[] o, float[] x, FloatBuffer weight, int size) {
+    // // calculate sum of squares in parallel
+    // float ss = (float) ForkJoinPool.commonPool().invoke(() ->
+    // Arrays.stream(x).parallel().map(xj -> xj * xj).sum());
+    // ss /= size;
+    // ss += 1e-5f;
+    // ss = 1.0f / (float) Math.sqrt(ss);
+    //
+    // // normalize and scale in parallel
+    // ForkJoinPool.commonPool().execute(() -> Arrays.parallelSetAll(o, j ->
+    // weight.get(j) * (ss * x[j])));
+    // }
 
     static void rmsnorm(float[] o, float[] x, FloatBuffer weight, int size) {
         // calculate sum of squares

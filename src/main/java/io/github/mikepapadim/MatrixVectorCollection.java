@@ -8,14 +8,19 @@ import java.util.stream.IntStream;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
+import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.annotations.Parallel;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+import uk.ac.manchester.tornado.api.types.collections.VectorFloat16;
 import uk.ac.manchester.tornado.api.types.collections.VectorFloat4;
 import uk.ac.manchester.tornado.api.types.collections.VectorFloat8;
+import uk.ac.manchester.tornado.api.types.vectors.Float16;
 import uk.ac.manchester.tornado.api.types.vectors.Float4;
 import uk.ac.manchester.tornado.api.types.vectors.Float8;
 
 public class MatrixVectorCollection {
+
+    private static final int TS = 4;
 
     public MatrixVectorCollection() {
     }
@@ -70,11 +75,34 @@ public class MatrixVectorCollection {
         });
     }
 
+    static void matrixVectorMultiply(float[] xout, float[] x, FloatBuffer w, int n, int d) {
+        IntStream.range(0, d).parallel().forEach(i -> {
+            float val = 0f;
+            for (int j = 0; j < n; j++) {
+                val += w.get(i * n + j) * x[j];
+            }
+            xout[i] = val;
+        });
+    }
+
     static void matrixVectorSimple(float[] xout, float[] x, FloatArray w, int n, int d) {
         for (@Parallel int i = 0; i < d; i++) {
             float val = 0f;
             for (int j = 0; j < n; j++) {
                 val += w.get(i * n + j) * x[j];
+            }
+            xout[i] = val;
+        }
+    }
+
+    static void matrixVectorFloat16(float[] xout, VectorFloat16 x, VectorFloat16 w, int n, int d) {
+        for (@Parallel int i = 0; i < d; i++) {
+            float val = 0f;
+            int vectorLaneWidth = x.vectorWidth();
+            for (int j = 0; j < n; j += vectorLaneWidth) {
+                Float16 xv16 = x.get(j / vectorLaneWidth);
+                Float16 wv16 = w.get(i * (n / vectorLaneWidth) + j / vectorLaneWidth);
+                val += Float16.dot(wv16, xv16);
             }
             xout[i] = val;
         }
@@ -105,4 +133,82 @@ public class MatrixVectorCollection {
             xout[i] = val;
         }
     }
+
+    static void matrixVectorSimpleWithContext(float[] xout, float[] x, FloatArray w, int n, KernelContext context) {
+        int idx = context.globalIdx;
+        float val = 0f;
+        for (int j = 0; j < n; j++) {
+            val += w.get(idx * n + j) * x[j];
+        }
+        xout[idx] = val;
+    }
+
+    static void matrixVectorOptimizedWithContext(float[] xout, float[] x, FloatArray w, int n, KernelContext context) {
+        int globalIdx = context.globalIdx;
+        int localIdx = context.localIdx;
+
+        float[] wSub = context.allocateFloatLocalArray(TS); // TS is the tile size
+
+        float val = 0.0f;
+
+        // Loop over tiles
+        int numTiles = n / TS;
+        for (int tileIndex = 0; tileIndex < numTiles; tileIndex++) {
+            int globalCol = TS * tileIndex + localIdx;
+
+            // Load one tile of the weight matrix into local memory
+            wSub[localIdx] = w.get(globalIdx * n + globalCol);
+
+            // Synchronize to make sure the tile is loaded
+            context.localBarrier();
+
+            // Perform the computation for a single tile
+            for (int k = 0; k < TS; k++) {
+                val += wSub[k] * x[TS * tileIndex + k];
+            }
+
+            // Synchronize before loading the next tile
+            context.localBarrier();
+        }
+
+        // Store the final result in xout
+        xout[globalIdx] = val;
+    }
+
+    static void matrixVectorFloat16withContext(float[] xout, VectorFloat16 x, VectorFloat16 w, int n, KernelContext context) {
+        int idx = context.globalIdx;
+        float val = 0f;
+        int vectorLaneWidth = x.vectorWidth();
+        for (int j = 0; j < n; j += vectorLaneWidth) {
+            Float16 xv16 = x.get(j / vectorLaneWidth);
+            Float16 wv16 = w.get(idx * (n / vectorLaneWidth) + j / vectorLaneWidth);
+            val += Float16.dot(wv16, xv16);
+        }
+        xout[idx] = val;
+    }
+
+    static void matrixVectorFloat8KwithContext(float[] xout, VectorFloat8 x, VectorFloat8 w, int n, KernelContext context) {
+        int idx = context.globalIdx;
+        int vectorLaneWidth = w.vectorWidth();
+        float val = 0f;
+        for (int j = 0; j < n; j += vectorLaneWidth) {
+            Float8 xv8 = x.get(j / vectorLaneWidth);
+            Float8 wv8 = w.get(idx * (n / vectorLaneWidth) + j / vectorLaneWidth);
+            val += Float8.dot(wv8, xv8);
+        }
+        xout[idx] = val;
+    }
+
+    static void matrixVectorFloat4withContext(float[] xout, VectorFloat4 x, VectorFloat4 w, int n, KernelContext context) {
+        int idx = context.globalIdx;
+        float val = 0f;
+        int vectorLaneWidth = x.vectorWidth();
+        for (int j = 0; j < n; j += vectorLaneWidth) {
+            Float4 xv4 = x.get(j / vectorLaneWidth);
+            Float4 wv4 = w.get(idx * (n / vectorLaneWidth) + j / vectorLaneWidth);
+            val += Float4.dot(wv4, xv4);
+        }
+        xout[idx] = val;
+    }
+
 }

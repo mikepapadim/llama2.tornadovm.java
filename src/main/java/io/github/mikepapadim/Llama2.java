@@ -19,17 +19,21 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
 
+import uk.ac.manchester.tornado.api.GridScheduler;
+import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.TaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
+import uk.ac.manchester.tornado.api.WorkerGrid;
+import uk.ac.manchester.tornado.api.WorkerGrid1D;
 import uk.ac.manchester.tornado.api.enums.DataTransferMode;
 
 class Llama2 {
 
     // ----------------------------------------------------------------------------
     // neural net blocks; the dynamics of the Transformer
-
     static final boolean USE_VECTOR_API = getBooleanProperty("VectorAPI", true);
-    static final boolean USE_VECTORFLOAT8 = getBooleanProperty("VectorFloat8", true);
+    static final boolean USE_VECTORFLOAT16 = getBooleanProperty("VectorFloat16", false);
+    static final boolean USE_VECTORFLOAT8 = getBooleanProperty("VectorFloat8", false);
     static final boolean USE_VECTORFLOAT4 = getBooleanProperty("VectorFloat4", false);
 
     private static boolean getBooleanProperty(String propertyName, boolean defaultValue) {
@@ -188,39 +192,41 @@ class Llama2 {
         return System.nanoTime() / 1_000_000;
     }
 
-    private static ArrayList<TornadoExecutionPlan> createTornadoExecutionPlan(Transformer transformer) {
+    private static TornadoExecutionPlan createTornadoExecutionPlan(Transformer transformer) {
         Config p = transformer.config;
         Weights w = transformer.weights;
         RunState s = transformer.state;
         int dim = p.dim;
-        TaskGraph taskGraph = null;
+        TaskGraph taskGraph;
+        KernelContext context = new KernelContext();
 
         if (USE_VECTORFLOAT8) {
             taskGraph = new TaskGraph("s0") //
                     .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.xVectorFloat8) //
-                    .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInVectorFloat8)
-                    //
-                    .task("t0", MatrixVectorCollection::matrixVectorFloat8, s.logits, s.xVectorFloat8, w.weightInVectorFloat8, dim, p.vocab_size) //
+                    .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInVectorFloat8)//
+                    .task("t0", MatrixVectorCollection::matrixVectorFloat8KwithContext, s.logits, s.xVectorFloat8, w.weightInVectorFloat8, dim, context) //
+                    .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
+        } else if (USE_VECTORFLOAT16) {
+            taskGraph = new TaskGraph("s0") //
+                    .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.xVectorFloat16) //
+                    .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInVectorFloat16) //
+                    .task("t0", MatrixVectorCollection::matrixVectorFloat16withContext, s.logits, s.xVectorFloat16, w.weightInVectorFloat16, dim, context) //
                     .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
         } else if (USE_VECTORFLOAT4) {
             taskGraph = new TaskGraph("s0") //
                     .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.xVectorFloat4) //
-                    .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInVectorFloat4)
-                    //
-                    .task("t0", MatrixVectorCollection::matrixVectorFloat4, s.logits, s.xVectorFloat4, w.weightInVectorFloat4, dim, p.vocab_size) //
+                    .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInVectorFloat4) //
+                    .task("t0", MatrixVectorCollection::matrixVectorFloat4withContext, s.logits, s.xVectorFloat4, w.weightInVectorFloat4, dim, context) //
                     .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
         } else {
             taskGraph = new TaskGraph("s0") //
                     .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.x) //
                     .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInFloatArray) //
-                    .task("t0", MatrixVectorCollection::matrixVectorSimple, s.logits, s.x, w.weightInFloatArray, dim, p.vocab_size) //
+                    .task("t0", MatrixVectorCollection::matrixVectorSimpleWithContext, s.logits, s.x, w.weightInFloatArray, dim, context) //
                     .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
         }
 
-        ArrayList<TornadoExecutionPlan> te = new ArrayList<>();
-        te.add(new TornadoExecutionPlan(taskGraph.snapshot()));
-
-        return te;
+        return new TornadoExecutionPlan(taskGraph.snapshot());
     }
 
     // ----------------------------------------------------------------------------
@@ -240,8 +246,32 @@ class Llama2 {
             System.exit(1);
         }
 
-        // Create the TornadoVM execution plan
-        ArrayList<TornadoExecutionPlan> te = createTornadoExecutionPlan(transformer);
+        ArrayList<TornadoExecutionPlan> te = new ArrayList<>();
+        // = createTornadoExecutionPlan(transformer);
+
+        // for (int i = 0; i < transformer.config.n_layers; i++) {
+        // TaskGraph taskGraph0 = new TaskGraph("sx" +
+        // i).transferToDevice(DataTransferMode.EVERY_EXECUTION, s.xb) //
+        // .transferToDevice(DataTransferMode.FIRST_EXECUTION,
+        // w.weightsAsPrimitivesQ.get(i), w.weightsAsPrimitivesK.get(i),
+        // w.weightsAsPrimitivesV.get(i))
+        // .task("t1", MatrixVectorCollection::matrixVectorFloat8, s.q, s.xb,
+        // w.weightsAsPrimitivesQ.get(i), dim, dim) //
+        // .task("t2", MatrixVectorCollection::matrixVectorFloat8, s.k, s.xb,
+        // w.weightsAsPrimitivesK.get(i), dim, kv_dim) //
+        // .task("t3", MatrixVectorCollection::matrixVectorFloat8, s.v, s.xb,
+        // w.weightsAsPrimitivesV.get(i), dim, kv_dim) //
+        // .transferToHost(DataTransferMode.EVERY_EXECUTION, transformer.state.q,
+        // transformer.state.k, transformer.state.v);//
+        // te.add(new TornadoExecutionPlan(taskGraph0.snapshot()));
+        // } // Create the TornadoVM execution plan
+        String propertyValue = System.getProperty("workgroup.size");
+        int dimsValue = Integer.parseInt(propertyValue);
+
+        WorkerGrid workerGrid = new WorkerGrid1D(transformer.config.vocab_size); // Create a 1D Worker
+        GridScheduler gridScheduler = new GridScheduler("s0.t0", workerGrid); // Attach the worker to the Grid
+        workerGrid.setLocalWork(dimsValue, 1, 1); // Set the local-group size
+        te.add(createTornadoExecutionPlan(transformer));
 
         long start = 0; // used to time our code, only initialized after first iteration
         int next; // will store the next token in the sequence
@@ -249,7 +279,7 @@ class Llama2 {
         int pos = 0; // position in the sequence
         while (pos < steps) {
             // forward the transformer to get logits for the next token
-            float[] logits = InferenceEngine.forward(transformer, token, pos, te);
+            float[] logits = InferenceEngine.forward(transformer, token, pos, te, gridScheduler);
 
             // Advance the state machine
             next = (pos < num_prompt_tokens - 1) ? prompt_tokens[pos + 1] : sample(sampler, logits);
@@ -282,8 +312,51 @@ class Llama2 {
         }
     }
 
-    // ----------------------------------------------------------------------------
-    // sampling can be done in a few ways: greedy argmax, sampling, top-p sampling
+    // private static TornadoExecutionPlan createTornadoExecutionPlan(Transformer
+    // transformer) {
+    // Config p = transformer.config;
+    // Weights w = transformer.weights;
+    // RunState s = transformer.state;
+    // int dim = p.dim;
+    // TaskGraph taskGraph = null;
+    //
+    // if (USE_VECTORFLOAT8) {
+    // taskGraph = new TaskGraph("s0") //
+    // .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.xVectorFloat8) //
+    // .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInVectorFloat8)//
+    // .task("t0", MatrixVectorCollection::matrixVectorFloat8, s.logits,
+    // s.xVectorFloat8, w.weightInVectorFloat8, dim, p.vocab_size) //
+    // .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
+    // } else if (USE_VECTORFLOAT16) {
+    // taskGraph = new TaskGraph("s0") //
+    // .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.xVectorFloat16) //
+    // .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInVectorFloat16)
+    // //
+    // .task("t0", MatrixVectorCollection::matrixVectorFloat16, s.logits,
+    // s.xVectorFloat16, w.weightInVectorFloat16, dim, p.vocab_size) //
+    // .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
+    // } else if (USE_VECTORFLOAT4) {
+    // taskGraph = new TaskGraph("s0") //
+    // .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.xVectorFloat4) //
+    // .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInVectorFloat4)
+    // //
+    // .task("t0", MatrixVectorCollection::matrixVectorFloat4, s.logits,
+    // s.xVectorFloat4, w.weightInVectorFloat4, dim, p.vocab_size) //
+    // .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
+    // } else {
+    // taskGraph = new TaskGraph("s0") //
+    // .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.x) //
+    // .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInFloatArray) //
+    // .task("t0", MatrixVectorCollection::matrixVectorSimple, s.logits, s.x,
+    // w.weightInFloatArray, dim, p.vocab_size) //
+    // .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
+    // }
+    //
+    // // ArrayList<TornadoExecutionPlan> te = new ArrayList<>();
+    // // te.add(new TornadoExecutionPlan(taskGraph.snapshot()));
+    //
+    // return new TornadoExecutionPlan(taskGraph.snapshot());
+    // }
 
     static int sample_argmax(float[] probabilities, int n) {
         // return the index that has the highest probability
@@ -297,6 +370,9 @@ class Llama2 {
         }
         return max_i;
     }
+
+    // ----------------------------------------------------------------------------
+    // sampling can be done in a few ways: greedy argmax, sampling, top-p sampling
 
     static int sample_mult(float[] probabilities, int n, float coin) {
         // sample index from probabilities (they must sum to 1!)
@@ -423,12 +499,6 @@ class Llama2 {
         return null;
     }
 
-    // ----------------------------------------------------------------------------
-    // chat loop
-    // I manually inspected the tokens for a few chat conversations compared to
-    // python reference and that seemed ok, but this was not thoroughly tested and
-    // is not safely implemented, it's more a proof of concept atm.
-
     static void chat(Transformer transformer, Tokenizer tokenizer, Sampler sampler, String cli_user_prompt, String cli_system_prompt, int steps) {
 
         // buffers for reading the system prompt and user prompt from stdin
@@ -497,7 +567,7 @@ class Llama2 {
             }
 
             // forward the transformer to get logits for the next token
-            float[] logits = InferenceEngine.forward(transformer, token, pos, null);
+            float[] logits = InferenceEngine.forward(transformer, token, pos, null, null);
             next = sample(sampler, logits);
             pos++;
 
@@ -515,6 +585,10 @@ class Llama2 {
     }
 
     // ----------------------------------------------------------------------------
+    // chat loop
+    // I manually inspected the tokens for a few chat conversations compared to
+    // python reference and that seemed ok, but this was not thoroughly tested and
+    // is not safely implemented, it's more a proof of concept atm.
 
     static void error_usage() {
         System.err.println("Usage:   java Llama2 <checkpoint> [options]");
@@ -530,6 +604,8 @@ class Llama2 {
         System.err.println("  -y <string> (optional) system prompt in chat mode");
         System.exit(1);
     }
+
+    // ----------------------------------------------------------------------------
 
     public static void main(String[] args) throws IOException {
         // default parameters
@@ -611,5 +687,10 @@ class Llama2 {
                 error_usage();
             }
         }
+    }
+
+    @FunctionalInterface
+    interface MatrixVectorFunction {
+        void apply(Object logits, Object xVector, Object weightInVector, int dim, int vocabSize);
     }
 }

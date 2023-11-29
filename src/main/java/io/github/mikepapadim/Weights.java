@@ -6,8 +6,10 @@ import java.nio.FloatBuffer;
 import java.util.ArrayList;
 
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+import uk.ac.manchester.tornado.api.types.collections.VectorFloat16;
 import uk.ac.manchester.tornado.api.types.collections.VectorFloat4;
 import uk.ac.manchester.tornado.api.types.collections.VectorFloat8;
+import uk.ac.manchester.tornado.api.types.vectors.Float16;
 import uk.ac.manchester.tornado.api.types.vectors.Float4;
 import uk.ac.manchester.tornado.api.types.vectors.Float8;
 
@@ -33,6 +35,7 @@ public class Weights {
     float[] wclsAsPrimitive;
 
     // Datastructures for TornadoVM
+    VectorFloat16 weightInVectorFloat16; // vocab in VectorFloat16
     VectorFloat8 weightInVectorFloat8; // vocab in VectorFloat8
     VectorFloat4 weightInVectorFloat4; // vocab in VectorFloat4
     FloatArray weightInFloatArray; // vocab in FloatArray
@@ -61,6 +64,7 @@ public class Weights {
         wcls.get(wclsAsPrimitive);
 
         this.weightInFloatArray = FloatArray.fromArray(wclsAsPrimitive);
+        this.weightInVectorFloat16 = createVectorFloat16Array(weightInFloatArray);
         this.weightInVectorFloat8 = createVectorFloat8Array(weightInFloatArray);
         this.weightInVectorFloat4 = createVectorFloat4Array(weightInFloatArray);
 
@@ -99,6 +103,29 @@ public class Weights {
             xn.add(temp);
         }
         return xn;
+    }
+
+    private VectorFloat16 createVectorFloat16Array(FloatArray fa) {
+        int numElements = fa.getSize();
+        int numFloat16Vectors = numElements / 16;
+
+        // Create an array to store the VectorFloat8 vectors
+        VectorFloat16 vectorFloat16Array = new VectorFloat16(numFloat16Vectors);
+
+        // Iterate over fa to create VectorFloat8 vectors
+        for (int i = 0; i < numFloat16Vectors; i++) {
+            // Extract a subset of eight elements from fa
+            Float16 float16 = new Float16();
+            for (int j = 0; j < 16; j++) {
+                float16.set(j, fa.get(i * 16 + j));
+            }
+
+            // Create a VectorFloat8 using the extracted Float8
+            vectorFloat16Array.set(i, float16);
+
+        }
+
+        return vectorFloat16Array;
     }
 
     private VectorFloat8 createVectorFloat8Array(FloatArray fa) {
