@@ -143,7 +143,7 @@ public class InferenceEngine {
             convertToVectorFloat4(s.xVectorFloat4, s.x);
         }
 
-        executionPlan.get(executionPlan.size() - 1).withDevice(TornadoExecutionPlan.getDevice(0, 0)).execute();
+        executionPlan.get(0).execute();
 
         return s.logits;
     }
@@ -197,19 +197,6 @@ public class InferenceEngine {
             s[i] = s[i] + xb2[i];
         }
     }
-
-    // static void rmsnorm(float[] o, float[] x, FloatBuffer weight, int size) {
-    // // calculate sum of squares in parallel
-    // float ss = (float) ForkJoinPool.commonPool().invoke(() ->
-    // Arrays.stream(x).parallel().map(xj -> xj * xj).sum());
-    // ss /= size;
-    // ss += 1e-5f;
-    // ss = 1.0f / (float) Math.sqrt(ss);
-    //
-    // // normalize and scale in parallel
-    // ForkJoinPool.commonPool().execute(() -> Arrays.parallelSetAll(o, j ->
-    // weight.get(j) * (ss * x[j])));
-    // }
 
     static void rmsnorm(float[] o, float[] x, FloatBuffer weight, int size) {
         // calculate sum of squares

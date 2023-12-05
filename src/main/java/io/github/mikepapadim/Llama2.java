@@ -241,24 +241,6 @@ class Llama2 {
         }
 
         ArrayList<TornadoExecutionPlan> te = new ArrayList<>();
-        // = createTornadoExecutionPlan(transformer);
-
-        // for (int i = 0; i < transformer.config.n_layers; i++) {
-        // TaskGraph taskGraph0 = new TaskGraph("sx" +
-        // i).transferToDevice(DataTransferMode.EVERY_EXECUTION, s.xb) //
-        // .transferToDevice(DataTransferMode.FIRST_EXECUTION,
-        // w.weightsAsPrimitivesQ.get(i), w.weightsAsPrimitivesK.get(i),
-        // w.weightsAsPrimitivesV.get(i))
-        // .task("t1", MatrixVectorCollection::matrixVectorFloat8, s.q, s.xb,
-        // w.weightsAsPrimitivesQ.get(i), dim, dim) //
-        // .task("t2", MatrixVectorCollection::matrixVectorFloat8, s.k, s.xb,
-        // w.weightsAsPrimitivesK.get(i), dim, kv_dim) //
-        // .task("t3", MatrixVectorCollection::matrixVectorFloat8, s.v, s.xb,
-        // w.weightsAsPrimitivesV.get(i), dim, kv_dim) //
-        // .transferToHost(DataTransferMode.EVERY_EXECUTION, transformer.state.q,
-        // transformer.state.k, transformer.state.v);//
-        // te.add(new TornadoExecutionPlan(taskGraph0.snapshot()));
-        // } // Create the TornadoVM execution plan
 
         te.add(createTornadoExecutionPlan(transformer));
 
