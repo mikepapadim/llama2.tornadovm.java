@@ -3,6 +3,15 @@ package io.github.mikepapadim;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
+import java.util.ArrayList;
+
+import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+import uk.ac.manchester.tornado.api.types.collections.VectorFloat16;
+import uk.ac.manchester.tornado.api.types.collections.VectorFloat4;
+import uk.ac.manchester.tornado.api.types.collections.VectorFloat8;
+import uk.ac.manchester.tornado.api.types.vectors.Float16;
+import uk.ac.manchester.tornado.api.types.vectors.Float4;
+import uk.ac.manchester.tornado.api.types.vectors.Float8;
 
 public class Weights {
     // token embedding table
@@ -23,31 +32,20 @@ public class Weights {
     final FloatBuffer rms_final_weight; // (dim,)
     // (optional) classifier weights for the logits, on the last layer
     final FloatBuffer wcls; // (vocab_size, dim)
+    float[] wclsAsPrimitive;
 
-    static FloatBuffer takeFloats(MemorySegment memorySegment, long[] position, int... dims) {
-        long totalBytes = 1;
-        for (int d : dims) {
-            totalBytes *= d;
-        }
-        totalBytes *= Float.BYTES;
-        MemorySegment slice = memorySegment.asSlice(position[0], totalBytes);
-        position[0] += totalBytes;
-        return slice.asByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
-    }
+    // Datastructures for TornadoVM
+    VectorFloat16 weightInVectorFloat16; // vocab in VectorFloat16
+    VectorFloat8 weightInVectorFloat8; // vocab in VectorFloat8
+    VectorFloat4 weightInVectorFloat4; // vocab in VectorFloat4
+    FloatArray weightInFloatArray; // vocab in FloatArray
 
-    static FloatBuffer[] takeArray(MemorySegment memorySegment, long[] position, int dim0, int... dims) {
-        FloatBuffer[] segments = new FloatBuffer[dim0];
-        for (int i = 0; i < dim0; ++i) {
-            segments[i] = takeFloats(memorySegment, position, dims);
-        }
-        return segments;
-    }
-
-    // ----------------------------------------------------------------------------
-    // initialization: read from checkpoint
+    ArrayList<float[]> weightsAsPrimitivesK;
+    ArrayList<float[]> weightsAsPrimitivesV;
+    ArrayList<float[]> weightsAsPrimitivesQ;
 
     Weights(Config config, MemorySegment memorySegment) {
-        long[] position = new long[]{0};
+        long[] position = new long[] { 0 };
         this.token_embedding_table = takeFloats(memorySegment, position, config.vocab_size, config.dim);
         this.rms_att_weight = takeArray(memorySegment, position, config.n_layers, config.dim);
         this.wq = takeArray(memorySegment, position, config.n_layers, config.dim, config.n_heads * config.head_size);
@@ -61,8 +59,118 @@ public class Weights {
         this.rms_final_weight = takeFloats(memorySegment, position, config.dim);
         position[0] += (config.seq_len * config.head_size / 2) * Float.BYTES; // skip what used to be freq_cis_real (for RoPE)
         position[0] += (config.seq_len * config.head_size / 2) * Float.BYTES; // skip what used to be freq_cis_imag (for RoPE)
-        this.wcls = config.shared_weights
-                ? this.token_embedding_table
-                : takeFloats(memorySegment, position, config.vocab_size, config.dim);
+        this.wcls = config.shared_weights ? this.token_embedding_table : takeFloats(memorySegment, position, config.vocab_size, config.dim);
+        this.wclsAsPrimitive = new float[wcls.remaining()];
+        wcls.get(wclsAsPrimitive);
+
+        this.weightInFloatArray = FloatArray.fromArray(wclsAsPrimitive);
+        this.weightInVectorFloat16 = createVectorFloat16Array(weightInFloatArray);
+        this.weightInVectorFloat8 = createVectorFloat8Array(weightInFloatArray);
+        this.weightInVectorFloat4 = createVectorFloat4Array(weightInFloatArray);
+
+        this.weightsAsPrimitivesK = normalizeInputWeight(wk);
+        this.weightsAsPrimitivesV = normalizeInputWeight(wv);
+        this.weightsAsPrimitivesQ = normalizeInputWeight(wq);
+
+    }
+
+    FloatBuffer takeFloats(MemorySegment memorySegment, long[] position, int... dims) {
+        long totalBytes = 1;
+        for (int d : dims) {
+            totalBytes *= d;
+        }
+        totalBytes *= Float.BYTES;
+        MemorySegment slice = memorySegment.asSlice(position[0], totalBytes);
+        position[0] += totalBytes;
+        return slice.asByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer();
+    }
+
+    FloatBuffer[] takeArray(MemorySegment memorySegment, long[] position, int dim0, int... dims) {
+        FloatBuffer[] segments = new FloatBuffer[dim0];
+        for (int i = 0; i < dim0; ++i) {
+            segments[i] = takeFloats(memorySegment, position, dims);
+        }
+        return segments;
+    }
+
+    ArrayList<float[]> normalizeInputWeight(FloatBuffer[] x) {
+        ArrayList<float[]> xn = new ArrayList<>();
+
+        for (FloatBuffer floatBuffer : x) {
+            FloatBuffer src = floatBuffer.duplicate();
+            float[] temp = new float[src.remaining()];
+            src.get(temp);
+            xn.add(temp);
+        }
+        return xn;
+    }
+
+    private VectorFloat16 createVectorFloat16Array(FloatArray fa) {
+        int numElements = fa.getSize();
+        int numFloat16Vectors = numElements / 16;
+
+        // Create an array to store the VectorFloat8 vectors
+        VectorFloat16 vectorFloat16Array = new VectorFloat16(numFloat16Vectors);
+
+        // Iterate over fa to create VectorFloat8 vectors
+        for (int i = 0; i < numFloat16Vectors; i++) {
+            // Extract a subset of eight elements from fa
+            Float16 float16 = new Float16();
+            for (int j = 0; j < 16; j++) {
+                float16.set(j, fa.get(i * 16 + j));
+            }
+
+            // Create a VectorFloat8 using the extracted Float8
+            vectorFloat16Array.set(i, float16);
+
+        }
+
+        return vectorFloat16Array;
+    }
+
+    private VectorFloat8 createVectorFloat8Array(FloatArray fa) {
+        int numElements = fa.getSize();
+        int numFloat8Vectors = numElements / 8;
+
+        // Create an array to store the VectorFloat8 vectors
+        VectorFloat8 vectorFloat8Array = new VectorFloat8(numFloat8Vectors);
+
+        // Iterate over fa to create VectorFloat8 vectors
+        for (int i = 0; i < numFloat8Vectors; i++) {
+            // Extract a subset of eight elements from fa
+            Float8 float8 = new Float8();
+            for (int j = 0; j < 8; j++) {
+                float8.set(j, fa.get(i * 8 + j));
+            }
+
+            // Create a VectorFloat8 using the extracted Float8
+            vectorFloat8Array.set(i, float8);
+
+        }
+
+        return vectorFloat8Array;
+    }
+
+    private VectorFloat4 createVectorFloat4Array(FloatArray fa) {
+        int numElements = fa.getSize();
+        int numFloat4Vectors = numElements / 4;
+
+        // Create an array to store the VectorFloat4 vectors
+        VectorFloat4 vectorFloat4Array = new VectorFloat4(numFloat4Vectors);
+
+        // Iterate over fa to create VectorFloat4 vectors
+        for (int i = 0; i < numFloat4Vectors; i++) {
+            // Extract a subset of four elements from fa
+            Float4 float4 = new Float4();
+            for (int j = 0; j < 4; j++) {
+                float4.set(j, fa.get(i * 4 + j));
+            }
+
+            // Create a VectorFloat4 using the extracted Float4
+            vectorFloat4Array.set(i, float4);
+
+        }
+
+        return vectorFloat4Array;
     }
 }
