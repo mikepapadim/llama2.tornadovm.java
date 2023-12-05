@@ -5,7 +5,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.stream.IntStream;
 
-import uk.ac.manchester.tornado.api.GridScheduler;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
 import uk.ac.manchester.tornado.api.types.collections.VectorFloat16;
 import uk.ac.manchester.tornado.api.types.collections.VectorFloat4;
@@ -15,7 +14,7 @@ import uk.ac.manchester.tornado.api.types.vectors.Float4;
 import uk.ac.manchester.tornado.api.types.vectors.Float8;
 
 public class InferenceEngine {
-    static float[] forward(Transformer transformer, int token, int pos, ArrayList<TornadoExecutionPlan> executionPlan, GridScheduler gridScheduler) {
+    static float[] forward(Transformer transformer, int token, int pos, ArrayList<TornadoExecutionPlan> executionPlan) {
         // a few convenience variables
         Config p = transformer.config;
         Weights w = transformer.weights;
@@ -144,7 +143,7 @@ public class InferenceEngine {
             convertToVectorFloat4(s.xVectorFloat4, s.x);
         }
 
-        executionPlan.get(executionPlan.size() - 1).withGridScheduler(gridScheduler).execute();
+        executionPlan.get(executionPlan.size() - 1).withDevice(TornadoExecutionPlan.getDevice(0, 0)).execute();
 
         return s.logits;
     }

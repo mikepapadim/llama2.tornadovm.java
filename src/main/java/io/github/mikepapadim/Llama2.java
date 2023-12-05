@@ -19,12 +19,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
 
-import uk.ac.manchester.tornado.api.GridScheduler;
-import uk.ac.manchester.tornado.api.KernelContext;
 import uk.ac.manchester.tornado.api.TaskGraph;
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
-import uk.ac.manchester.tornado.api.WorkerGrid;
-import uk.ac.manchester.tornado.api.WorkerGrid1D;
 import uk.ac.manchester.tornado.api.enums.DataTransferMode;
 
 class Llama2 {
@@ -198,31 +194,29 @@ class Llama2 {
         RunState s = transformer.state;
         int dim = p.dim;
         TaskGraph taskGraph;
-        KernelContext context = new KernelContext();
-
         if (USE_VECTORFLOAT8) {
             taskGraph = new TaskGraph("s0") //
                     .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.xVectorFloat8) //
                     .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInVectorFloat8)//
-                    .task("t0", MatrixVectorCollection::matrixVectorFloat8KwithContext, s.logits, s.xVectorFloat8, w.weightInVectorFloat8, dim, context) //
+                    .task("t0", MatrixVectorCollection::matrixVectorFloat8, s.logits, s.xVectorFloat8, w.weightInVectorFloat8, dim, transformer.config.vocab_size) //
                     .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
         } else if (USE_VECTORFLOAT16) {
             taskGraph = new TaskGraph("s0") //
                     .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.xVectorFloat16) //
                     .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInVectorFloat16) //
-                    .task("t0", MatrixVectorCollection::matrixVectorFloat16withContext, s.logits, s.xVectorFloat16, w.weightInVectorFloat16, dim, context) //
+                    .task("t0", MatrixVectorCollection::matrixVectorFloat16, s.logits, s.xVectorFloat16, w.weightInVectorFloat16, dim, transformer.config.vocab_size) //
                     .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
         } else if (USE_VECTORFLOAT4) {
             taskGraph = new TaskGraph("s0") //
                     .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.xVectorFloat4) //
                     .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInVectorFloat4) //
-                    .task("t0", MatrixVectorCollection::matrixVectorFloat4withContext, s.logits, s.xVectorFloat4, w.weightInVectorFloat4, dim, context) //
+                    .task("t0", MatrixVectorCollection::matrixVectorFloat4, s.logits, s.xVectorFloat4, w.weightInVectorFloat4, dim, transformer.config.vocab_size) //
                     .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
         } else {
             taskGraph = new TaskGraph("s0") //
                     .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.x) //
                     .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInFloatArray) //
-                    .task("t0", MatrixVectorCollection::matrixVectorSimpleWithContext, s.logits, s.x, w.weightInFloatArray, dim, context) //
+                    .task("t0", MatrixVectorCollection::matrixVectorSimple, s.logits, s.x, w.weightInFloatArray, dim, transformer.config.vocab_size) //
                     .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
         }
 
@@ -265,12 +259,7 @@ class Llama2 {
         // transformer.state.k, transformer.state.v);//
         // te.add(new TornadoExecutionPlan(taskGraph0.snapshot()));
         // } // Create the TornadoVM execution plan
-        String propertyValue = System.getProperty("workgroup.size");
-        int dimsValue = Integer.parseInt(propertyValue);
 
-        WorkerGrid workerGrid = new WorkerGrid1D(transformer.config.vocab_size); // Create a 1D Worker
-        GridScheduler gridScheduler = new GridScheduler("s0.t0", workerGrid); // Attach the worker to the Grid
-        workerGrid.setLocalWork(dimsValue, 1, 1); // Set the local-group size
         te.add(createTornadoExecutionPlan(transformer));
 
         long start = 0; // used to time our code, only initialized after first iteration
@@ -279,7 +268,7 @@ class Llama2 {
         int pos = 0; // position in the sequence
         while (pos < steps) {
             // forward the transformer to get logits for the next token
-            float[] logits = InferenceEngine.forward(transformer, token, pos, te, gridScheduler);
+            float[] logits = InferenceEngine.forward(transformer, token, pos, te);
 
             // Advance the state machine
             next = (pos < num_prompt_tokens - 1) ? prompt_tokens[pos + 1] : sample(sampler, logits);
@@ -567,7 +556,7 @@ class Llama2 {
             }
 
             // forward the transformer to get logits for the next token
-            float[] logits = InferenceEngine.forward(transformer, token, pos, null, null);
+            float[] logits = InferenceEngine.forward(transformer, token, pos, null);
             next = sample(sampler, logits);
             pos++;
 
