@@ -36,9 +36,9 @@ public class InferenceEngine {
             rmsnorm(s.xb, s.x, w.rms_att_weight[l], dim);
 
             // qkv matmuls for this position
-            MatrixVectorCollection.matrixVectorMultiply(s.q, s.xb, w.wq[l], dim, dim);
-            MatrixVectorCollection.matrixVectorMultiply(s.k, s.xb, w.wk[l], dim, kv_dim);
-            MatrixVectorCollection.matrixVectorMultiply(s.v, s.xb, w.wv[l], dim, kv_dim);
+            MatrixVectorCollection.matmul(s.q, s.xb, w.wq[l], dim, dim);
+            MatrixVectorCollection.matmul(s.k, s.xb, w.wk[l], dim, kv_dim);
+            MatrixVectorCollection.matmul(s.v, s.xb, w.wv[l], dim, kv_dim);
 
             // RoPE relative positional encoding: complex-valued rotate q and k in each head
             for (int i = 0; i < dim; i += 2) {
