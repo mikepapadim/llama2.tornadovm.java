@@ -1,4 +1,4 @@
-# An extesion to Llama2.java implementation accelerated onto GPUs with TornadoVM
+# An extension to Llama2.java implementation accelerated onto GPUs with TornadoVM
 
 This repository provides an implementation of [llama2.java](https://github.com/mukel/llama2.java), extended to use the Vector API and [TornadoVM](https://github.com/beehive-lab/TornadoVM) for acceleration.
 Additionally, developers can optionally run with three different vector types, Vector4, Vector8 or Vector16, optimized by TornadoVM.
@@ -20,7 +20,7 @@ After the `set_paths.sh` file has been configured with the correct paths, run:
 ./set_paths.sh  
 ```
 
-And finally compile the project by running this script:
+And finally, compile the project by running this script:
 
 ```bash
 ./compile.sh
@@ -28,7 +28,7 @@ And finally compile the project by running this script:
 
 ## Execution
 ### Token files
-Just like the original java implementation, the program requires a `tokenizer.bin` file and the input models available in the TinyLlamas. 
+Just like the original Java implementation, the program requires a `tokenizer.bin` file and the input models available in the TinyLlamas. 
 ```bash
 wget https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
 wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
@@ -67,12 +67,12 @@ The repository contains a `run.sh` script for running. This script takes the fol
 
 This test aims to illustrate the collaborative efficiency gained by integrating Vector API, employing off-heap memory types via MemorySegments for read-only weights, and TornadoVM. Following the profiling of the original Java implementation, optimization was directed at offloading only the last matrix vector computation to the GPU through TornadoVM.
 
-To ensure unbiased and reliable performance evaluation, the test will be executed over more than 100 iterations. This extended duration allows the Java Virtual Machine (JVM) to reach a warmed-up state, ensuring stability in performance measurements.
+To ensure unbiased and reliable performance evaluation, the test will be executed over more than 100 iterations. This extended duration allows the Java Virtual Machine (JVM) to reach a warm-up state, ensuring stability in performance measurements.
 
 ### Multi-threaded
  
 `llama2.java` executed with `-Djava.util.concurrent.ForkJoinPool.common.parallelism=24`  
-We record in the following table the maximum of token per second achieved after warm-up.
+We record in the following table the maximum of tokens per second achieved after warm-up.
 
 | Model | Tokens per second | Speedup vs. llama2.java | Implementation |  
 | ------|------------------ | -------------------- | -------------- |
