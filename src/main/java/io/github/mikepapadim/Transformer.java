@@ -9,15 +9,50 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 
+/**
+ * The Transformer class represents a neural network model with hyperparameters,
+ * weights, and state information for performing forward passes.
+ */
 public class Transformer {
-    final Config config; // the hyperparameters of the architecture (the blueprint)
-    final Weights weights; // the weights of the model
-    final RunState state; // buffers for the "wave" of activations in the forward pass
-    // some more state needed to properly clean up the memory mapping (sigh)
-    final Arena memoryArena; // scope of the memory mapping
-    final MemorySegment data; // memory mapped data pointer
-    final long file_size; // size of the checkpoint file in bytes
 
+    /**
+     * The hyperparameters of the architecture (the blueprint).
+     */
+    final Config config;
+
+    /**
+     * The weights of the model.
+     */
+    final Weights weights;
+
+    /**
+     * Buffers for the "wave" of activations in the forward pass.
+     */
+    final RunState state;
+
+    /**
+     * Scope of the memory mapping for proper memory cleanup.
+     */
+    final Arena memoryArena;
+
+    /**
+     * Memory-mapped data pointer containing the checkpoint file.
+     */
+    final MemorySegment data;
+
+    /**
+     * Size of the checkpoint file in bytes.
+     */
+    final long file_size;
+
+    /**
+     * Constructs a Transformer by loading the model checkpoint from a file.
+     *
+     * @param checkpointPath
+     *            The path to the checkpoint file.
+     * @throws IOException
+     *             If an I/O error occurs while reading the checkpoint file.
+     */
     public Transformer(String checkpointPath) throws IOException {
         try (FileChannel fileChannel = FileChannel.open(Paths.get(checkpointPath), StandardOpenOption.READ)) {
             this.file_size = fileChannel.size();
