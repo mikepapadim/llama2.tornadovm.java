@@ -28,8 +28,13 @@ And finally compile the project by running this script:
 
 ## Execution
 ### Token files
-Just like the original java implementation, the program requires a .bin file with an input model. 
-Models of various sizes can be downloaded from [here](https://huggingface.co/karpathy/tinyllamas/tree/main).
+Just like the original java implementation, the program requires a `tokenizer.bin` file and the input models available in the TinyLlamas. 
+```bash
+wget https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
+wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
+wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories42M.bin
+wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories100M.bin
+```
 ### How to run
 The repository contains a `run.sh` script for running. This script takes the following arguments:
 * The TornadoVM workgroup size (optional)
@@ -50,50 +55,35 @@ The repository contains a `run.sh` script for running. This script takes the fol
 
 ## Performance
 
-Quick numbers on an AMD Ryzen 3950X 64GB, Arch Linux.  
-`llama2.java` executed on OpenJDK 20.0.2+9.  
-To make things fair w.r.t. to vectorization, the Java version has a matmul implementation using the [Vector API](https://openjdk.org/jeps/448).  
-In these measurements the JVM is warmed up enough to reach peak tokens/s.  
-On GraalVM, please note that the Graal compiler doesn't support the Vector API yet, to avoid unexpected performance degradation, run with `-Dllama2.VectorAPI=false`.
+| Component  | Specification                              |
+|------------|--------------------------------------------|
+| CPU        | 13th Gen Intel® Core i7-13700 × 24 threads |
+| GPU        | NVIDIA GeForce RTX 3070                    |
+| OS         | Pop!_OS Linux                              |
+| JDK        | OpenJDK 21+35-2513                         |
+| TornadoVM  | v1.0                                       |
 
-****Notes**  
-*The numbers below were collected using aggressive (gcc) compiler flags e.g. regular `gcc -O2 ...` wouldn't be as fast.*
+**Test Objective: Synergy Between Vector API, Panama  and TornadoVM**
 
-### Single-threaded
+This test aims to illustrate the collaborative efficiency gained by integrating Vector API, employing off-heap memory types via MemorySegments for read-only weights, and TornadoVM. Following the profiling of the original Java implementation, optimization was directed at offloading only the last matrix vector computation to the GPU through TornadoVM.
 
-`llama2.c` compiled with `gcc -Ofast -march=native run.c -lm -o run -march=native`  
-`llama2.java` executed with `-Djava.util.concurrent.ForkJoinPool.common.parallelism=0`
-
-| Model | Tokens per second | Speedup vs. llama2.c | Implementation |  
-| ------|------------------ | -------------------- | -------------- | 
-| stories15M.bin  |   363 |  1.0 | llama2.c    |
-| stories15M.bin  |   237 | 0.65 | llama2.java |
-| stories110M.bin | 51.71 |  1.0 | llama2.c    |
-| stories110M.bin | 42.20 | 0.81 | llama2.java |
-| llama2_7B.bin   |  0.92 |  1.0 | llama2.c    |
-| llama2_7B.bin   |  0.88 | 0.95 | llama2.java |
+To ensure unbiased and reliable performance evaluation, the test will be executed over more than 100 iterations. This extended duration allows the Java Virtual Machine (JVM) to reach a warmed-up state, ensuring stability in performance measurements.
 
 ### Multi-threaded
+ 
+`llama2.java` executed with `-Djava.util.concurrent.ForkJoinPool.common.parallelism=24`  
+We record in the following table the maximum of token per second achieved after warm-up.
 
-`llama2.c` compiled with `gcc -Ofast -fopenmp -march=native run.c -lm -o run -march=native`  
-`llama2.c` executed with `OMP_NUM_THREADS=8`  
-`llama2.java` executed with `-Djava.util.concurrent.ForkJoinPool.common.parallelism=8`  
-
-| Model | Tokens per second | Speedup vs. llama2.c | Implementation |  
+| Model | Tokens per second | Speedup vs. llama2.java | Implementation |  
 | ------|------------------ | -------------------- | -------------- |
-|  stories15M.bin |  1233 |  1.0 | llama2.c    |
-|  stories15M.bin |   438 | 0.35 | llama2.java |
-| stories110M.bin |    90 |  1.0 | llama2.c    |
-| stories110M.bin |    80 | 0.88 | llama2.java |
-|   llama2_7B.bin |  1.68 |  1.0 | llama2.c    |
-|   llama2_7B.bin |  1.65 | 0.98 | llama2.java |
+|  stories15M.bin |  718 |  1.15x | llama2TornadoVM.java |
+|  stories15M.bin |   626 | 1.0 | llama2.java |
+| stories42M.bin |    326 |  1.16x | llama2TornadoVM.java    |
+| stories420M.bin |   281 | 1.0 | llama2.java |
+| stories110M.bin |  137 |  1.09x | llama2TornadoVM.java    |
+| stories110M.bin |  126 | 1.0 | llama2.java |
 
-****Notes**  
-*In `stories15M.bin`, the C version shows a huge speedup, very likely a cache effect, this is considered an outlier.
-Running with 16/32 threads may actually cause a slowdown; the performance is, in most cases, U-shaped w.r.t to the # of threads.
-With that many threads, vectorization does not give any advantage, since throughput is limited by memory bandwidth.*
 
-Performance is already comparable to the original C code, bar vectorization, even if the Java code has not been optimized yet.
 
 ## License
 
