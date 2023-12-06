@@ -36,9 +36,9 @@ public class InferenceEngine {
             rmsnorm(s.xb, s.x, w.rms_att_weight[l], dim);
 
             // qkv matmuls for this position
-            MatrixVectorCollection.matrixVectorMultiply(s.q, s.xb, w.wq[l], dim, dim);
-            MatrixVectorCollection.matrixVectorMultiply(s.k, s.xb, w.wk[l], dim, kv_dim);
-            MatrixVectorCollection.matrixVectorMultiply(s.v, s.xb, w.wv[l], dim, kv_dim);
+            MatrixVectorCollection.matmul(s.q, s.xb, w.wq[l], dim, dim);
+            MatrixVectorCollection.matmul(s.k, s.xb, w.wk[l], dim, kv_dim);
+            MatrixVectorCollection.matmul(s.v, s.xb, w.wv[l], dim, kv_dim);
 
             // RoPE relative positional encoding: complex-valued rotate q and k in each head
             for (int i = 0; i < dim; i += 2) {
@@ -143,7 +143,7 @@ public class InferenceEngine {
             convertToVectorFloat4(s.xVectorFloat4, s.x);
         }
 
-        executionPlan.get(executionPlan.size() - 1).withDevice(TornadoExecutionPlan.getDevice(0, 0)).execute();
+        executionPlan.get(0).execute();
 
         return s.logits;
     }
@@ -197,19 +197,6 @@ public class InferenceEngine {
             s[i] = s[i] + xb2[i];
         }
     }
-
-    // static void rmsnorm(float[] o, float[] x, FloatBuffer weight, int size) {
-    // // calculate sum of squares in parallel
-    // float ss = (float) ForkJoinPool.commonPool().invoke(() ->
-    // Arrays.stream(x).parallel().map(xj -> xj * xj).sum());
-    // ss /= size;
-    // ss += 1e-5f;
-    // ss = 1.0f / (float) Math.sqrt(ss);
-    //
-    // // normalize and scale in parallel
-    // ForkJoinPool.commonPool().execute(() -> Arrays.parallelSetAll(o, j ->
-    // weight.get(j) * (ss * x[j])));
-    // }
 
     static void rmsnorm(float[] o, float[] x, FloatBuffer weight, int size) {
         // calculate sum of squares
