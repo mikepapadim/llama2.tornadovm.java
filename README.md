@@ -1,74 +1,51 @@
-# A Java port of Andrej Karpathy's llama2.c
+# A Llama2 implementation accelerated with TornadoVM
 
-This is a pure Java port of Andrej Karpathy's awesome [llama2.c](https://github.com/karpathy/llama2.c), a very simple implementation
-to run inference of models with a [Llama2](https://arxiv.org/pdf/2302.13971.pdf)-like transformer-based LLM architecture.  
+This repository provides an implementation of [llama2.java](https://github.com/mukel/llama2.java), extended to use the Vector API and [TornadoVM](https://github.com/beehive-lab/TornadoVM) for acceleration.
+Additionally, developers can optionally run with three different vector types, Vector4, Vector8 or Vector16, optimized by TornadoVM.
 
-<p align="center">
-  <img width="600" src="https://github.com/mukel/llama2.java/assets/1896283/66a8a650-f1a9-4540-9587-b112294e5e6b">
-</p>
-
-Currently, there isn't anything really original here, but I'll continue polishing it while keeping it in sync with the original.  
-Besides the educational value, this project will be used to test and tune compiler optimizations on the JVM, particularly for the [Graal compiler](https://www.graalvm.org/latest/reference-manual/java/compiler).
-This port used [llama2.scala](https://github.com/jrudolph/llama2.scala) initially as a reference.
+## Prerequisites
+* **Java 21+**: This is essential as the project uses the [Project Panama](https://openjdk.org/projects/panama/) for native memory allocation. 
+* **TornadoVM**: Detailed installation instructions can be found [here](https://tornadovm.readthedocs.io/en/latest/installation.html).  
 
 ## Build
-Java 21+ is required, in particular the [`MemorySegment` mmap-ing feature](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/nio/channels/FileChannel.html#map(java.nio.channels.FileChannel.MapMode,long,long,java.lang.foreign.Arena)).  
+The `set_paths.sh` file provides a template with all the paths that need to be set up for the compilation and execution.
+From this template, the paths that need to be set are: 
+* **$JAVA_HOME**, with the path to JDK 21
+* **$TORNADO_ROOT**, with the path to the TornadoVM installation  
+* **$LLAMA_ROOT**, with the path of this project.
 
-The code expects [`tokenizer.bin`](https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin) in the current directory.
-You can use [TinyStories](https://huggingface.co/karpathy/tinyllamas/tree/main) checkpoints or get LLama2 models by [following instructions](https://github.com/karpathy/llama2.c#metas-llama-2-models).
+After the `set_paths.sh` file has been configured with the correct paths, run:
 
 ```bash
-wget https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
-wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
+./set_paths.sh  
 ```
 
-To build and run manually:
+And finally compile the project by running this script:
+
 ```bash
-javac --enable-preview -source 21 --add-modules=jdk.incubator.vector Llama2.java
-java --enable-preview --add-modules=jdk.incubator.vector Llama2 stories15M.bin
+./compile.sh
 ```
 
-Or run it directly with [JBang](https://www.jbang.dev/):
+## Execution
+### Token files
+Just like the original java implementation, the program requires a .bin file with an input model. 
+Models of various sizes can be downloaded from [here](https://huggingface.co/karpathy/tinyllamas/tree/main).
+### How to run
+The repository contains a `run.sh` script for running. This script takes the following arguments:
+* The TornadoVM workgroup size (optional)
+* The TornadoVM Vector mode (optional)
+* The .bin model file
+
 ```bash
-jbang Llama2.java stories15M.bin
-# With additional -D options and custom Java home.
-JAVA_HOME=/path/to/java/home jbang -Djava.util.concurrent.ForkJoinPool.common.parallelism=0 -Dllama2.VectorAPI=false Llama2.java stories15M.bin
-```
+// Run with just the model 
+./run.sh stories15M.bin not working 
+// Run with the workgroup size and the model
+./run.sh -n 128 stories15M.bin
+// Run with the workgroup size, the [VectorFloat4|VectorFloat8|VectorFloat16] types and the model
+./run.sh -n 128 -v -Dllama2.VectorFloat4=true stories15M.bin
+// Run with the [VectorFloat4|VectorFloat8|VectorFloat16] types and the model
+./run.sh -v -Dllama2.VectorFloat4=true stories15M.bin
 
-A `Makefile` and a `run.sh` script are also provided:
-
-```bash
-make # optional, run.sh already runs make
-
-JAVA_HOME=$GRAALVM_HOME \
-JAVA_RUNTIME_OPTIONS=-Djava.util.concurrent.ForkJoinPool.common.parallelism=8 \
-./run.sh stories15M.bin
-```
-
-#### Native image
-
-A standalone native image can be created with [GraalVM](https://www.graalvm.org/)
-```bash
-JAVA_HOME=$GRAALVM_HOME NATIVE_IMAGE_OPTIONS="-march=native" make native-image
-./llama2 stories15M.bin
-```
-
-Or can also be built with [Profile-Guided Optimizations (PGO)](https://www.graalvm.org/dev/reference-manual/native-image/guides/optimize-native-executable-with-pgo), on Oracle GaaalVM:
-```bash
-JAVA_HOME=$GRAALVM_HOME \
-NATIVE_IMAGE_OPTIONS="--pgo-instrument -march=native --initialize-at-build-time=Llama2 -Dllama2.VectorAPI=false" \
-make native-image
-
-# Profile run to generate default.iprof, with no parallelism to speedup profiling.
-./llama2 -Djava.util.concurrent.ForkJoinPool.common.parallelism=0 stories15M.bin
-
-# Build optimized image
-JAVA_HOME=$GRAALVM_HOME \
-NATIVE_IMAGE_OPTIONS="--pgo -march=native --initialize-at-build-time=Llama2 -Dllama2.VectorAPI=false" \
-make native-image
-
-# Should run ~2X faster than regular image.
-./llama2 stories15M.bin
 ```
 
 ## Performance
