@@ -2,6 +2,12 @@ package io.github.mikepapadim;
 
 import java.nio.ByteBuffer;
 
+/**
+ * This class contains configuration parameters for the transformer model,
+ * such as transformer dimension, feed-forward network (FFN) layer hidden dimension,
+ * number of layers, number of query heads, number of key/value heads (which can be less than query heads due to multi-query),
+ * vocabulary size, maximum sequence length, shared weights indicator, and head size.
+ */
 public  class Config {
     final int dim; // transformer dimension
     final int hidden_dim; // for ffn layers
@@ -13,6 +19,11 @@ public  class Config {
     final boolean shared_weights;
     final int head_size;
 
+    /**
+     * Initializes the configurations through {@link ByteBuffer} object.
+     *
+     * @param buffer The {@link ByteBuffer} containing the configuration information.
+     */
     Config(ByteBuffer buffer) {
         this.dim = buffer.getInt();
         this.hidden_dim = buffer.getInt();

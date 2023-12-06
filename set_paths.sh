@@ -1,0 +1,7 @@
+#!/bin/bash
+
+export JAVA_HOME= #PATH TO JDK21
+export TORNADO_ROOT= #PATH TO TORNADOVM
+export TORNADO_SDK=${TORNADO_ROOT}/bin/sdk
+export LLAMA_ROOT= #PATH OF THE PROJECT
+export PATH="${PATH}:${LLAMA_ROOT=}/bin"

@@ -18,13 +18,25 @@ import uk.ac.manchester.tornado.api.types.vectors.Float16;
 import uk.ac.manchester.tornado.api.types.vectors.Float4;
 import uk.ac.manchester.tornado.api.types.vectors.Float8;
 
+/**
+ * This class contains a set of Matrix and Vector multiplication methods implemented using TornadoVM's API.
+ */
 public class MatrixVectorCollection {
 
     private static final int TS = 4;
 
-    public MatrixVectorCollection() {
-    }
-
+    /**
+     * Performs matrix multiplication between the weight matrix (W) and the input vector (x).
+     * It uses Graal's auto-vectorization for the matrix multiplication. However, if the
+     * {@link #Llama2.USE_VECTOR_API} flag is set to true, it employs explicit vectorization
+     * using the Vector API for further optimization.
+     *
+     * @param xout The output vector of the matrix multiplication.
+     * @param x    The input vector to be multiplied with the weight matrix.
+     * @param w    The weight matrix represented as a {@link FloatBuffer}.
+     * @param n    The number of columns in the weight matrix and the size of the input vector.
+     * @param d    The number of rows in the weight matrix and the size of the output vector.
+     */
     static void matmul(float[] xout, float[] x, FloatBuffer w, int n, int d) {
         // W (d,n) @ x (n,) -> xout (d,)
         // by far the most amount of time is spent inside this little function
@@ -75,6 +87,16 @@ public class MatrixVectorCollection {
         });
     }
 
+    /**
+     * Performs matrix multiplication between the weight matrix (W) and the input vector (x).
+     * Is uses parallel streams for optimization.
+     *
+     * @param xout The output vector of the matrix multiplication.
+     * @param x    The input vector to be multiplied with the weight matrix.
+     * @param w    The weight matrix represented as a {@link FloatBuffer}.
+     * @param n    The number of columns in the weight matrix and the size of the input vector.
+     * @param d    The number of rows in the weight matrix and the size of the output vector.
+     */
     static void matrixVectorMultiply(float[] xout, float[] x, FloatBuffer w, int n, int d) {
         IntStream.range(0, d).parallel().forEach(i -> {
             float val = 0f;
@@ -85,6 +107,17 @@ public class MatrixVectorCollection {
         });
     }
 
+    /**
+     * Performs matrix multiplication between the weight matrix (W) and the input vector (x).
+     * It uses the @Parallel annotation of TornadoVM to signify to the compiler that the loop is data
+     * parallel. The weight matrix w is represented by a TornadoVM {@link FloatArray}, which resides off-heap.
+     *
+     * @param xout The output vector of the matrix multiplication.
+     * @param x    The input vector to be multiplied with the weight matrix.
+     * @param w    The weight matrix represented as a {@link FloatArray}.
+     * @param n    The number of columns in the weight matrix and the size of the input vector.
+     * @param d    The number of rows in the weight matrix and the size of the output vector.
+     */
     static void matrixVectorSimple(float[] xout, float[] x, FloatArray w, int n, int d) {
         for (@Parallel int i = 0; i < d; i++) {
             float val = 0f;
@@ -95,6 +128,18 @@ public class MatrixVectorCollection {
         }
     }
 
+    /**
+     * Performs matrix multiplication between the weight matrix (W) and the input vector (x).
+     * It uses the @Parallel annotation of TornadoVM to signify to the compiler that the loop is data
+     * parallel. The weight matrix w and the input vector x are TornadoVM {@link VectorFloat16} vectors,
+     * and reside off-heap.
+     *
+     * @param xout The output vector of the matrix multiplication.
+     * @param x    The input vector to be multiplied with the weight matrix, represented as a {@link VectorFloat16}.
+     * @param w    The weight matrix represented as a {@link VectorFloat16}.
+     * @param n    The number of columns in the weight matrix and the size of the input vector.
+     * @param d    The number of rows in the weight matrix and the size of the output vector.
+     */
     static void matrixVectorFloat16(float[] xout, VectorFloat16 x, VectorFloat16 w, int n, int d) {
         for (@Parallel int i = 0; i < d; i++) {
             float val = 0f;
@@ -108,6 +153,18 @@ public class MatrixVectorCollection {
         }
     }
 
+    /**
+     * Performs matrix multiplication between the weight matrix (W) and the input vector (x).
+     * It uses the @Parallel annotation of TornadoVM to signify to the compiler that the loop is data
+     * parallel. The weight matrix w and the input vector x are TornadoVM {@link VectorFloat8} vectors,
+     * and reside off-heap.
+     *
+     * @param xout The output vector of the matrix multiplication.
+     * @param x    The input vector to be multiplied with the weight matrix, represented as a {@link VectorFloat8}.
+     * @param w    The weight matrix represented as a {@link VectorFloat8}.
+     * @param n    The number of columns in the weight matrix and the size of the input vector.
+     * @param d    The number of rows in the weight matrix and the size of the output vector.
+     */
     static void matrixVectorFloat8(float[] xout, VectorFloat8 x, VectorFloat8 w, int n, int d) {
         for (@Parallel int i = 0; i < d; i++) {
             float val = 0f;
@@ -121,6 +178,18 @@ public class MatrixVectorCollection {
         }
     }
 
+    /**
+     * Performs matrix multiplication between the weight matrix (W) and the input vector (x).
+     * It uses the @Parallel annotation of TornadoVM to signify to the compiler that the loop is data
+     * parallel. The weight matrix w and the input vector x are TornadoVM {@link VectorFloat4} vectors,
+     * and reside off-heap.
+     *
+     * @param xout The output vector of the matrix multiplication.
+     * @param x    The input vector to be multiplied with the weight matrix, represented as a {@link VectorFloat4}.
+     * @param w    The weight matrix represented as a {@link VectorFloat4}.
+     * @param n    The number of columns in the weight matrix and the size of the input vector.
+     * @param d    The number of rows in the weight matrix and the size of the output vector.
+     */
     static void matrixVectorFloat4(float[] xout, VectorFloat4 x, VectorFloat4 w, int n, int d) {
         for (@Parallel int i = 0; i < d; i++) {
             float val = 0f;
@@ -134,6 +203,18 @@ public class MatrixVectorCollection {
         }
     }
 
+    /**
+     * Performs matrix multiplication between the weight matrix (W) and the input vector (x).
+     * It is implemented using TornadoVM's Kernel API.
+     * The weight matrix w is represented by a TornadoVM {@link FloatArray}, which resides off-heap.
+     *
+     * @param xout    The output vector of the matrix multiplication.
+     * @param x       The input vector to be multiplied with the weight matrix.
+     * @param w       The weight matrix represented as a {@link FloatArray}.
+     * @param n       The number of columns in the weight matrix and the size of the input vector.
+     * @param context The kernel context object is used to access low-level parallel programming components
+     *                (e.g. global and local thread id, etc.).
+     */
     static void matrixVectorSimpleWithContext(float[] xout, float[] x, FloatArray w, int n, KernelContext context) {
         int idx = context.globalIdx;
         float val = 0f;
@@ -143,6 +224,18 @@ public class MatrixVectorCollection {
         xout[idx] = val;
     }
 
+    /**
+     * Performs matrix multiplication between the weight matrix (W) and the input vector (x).
+     * It is implemented using TornadoVM's Kernel API and uses a local array for optimization.
+     * The weight matrix w is represented by a TornadoVM {@link FloatArray}, which resides off-heap.
+     *
+     * @param xout    The output vector of the matrix multiplication.
+     * @param x       The input vector to be multiplied with the weight matrix.
+     * @param w       The weight matrix represented as a {@link FloatArray}.
+     * @param n       The number of columns in the weight matrix and the size of the input vector.
+     * @param context The kernel context object is used to access low-level parallel programming components
+     *                (e.g. global and local thread id, etc.).
+     */
     static void matrixVectorOptimizedWithContext(float[] xout, float[] x, FloatArray w, int n, KernelContext context) {
         int globalIdx = context.globalIdx;
         int localIdx = context.localIdx;
@@ -175,6 +268,18 @@ public class MatrixVectorCollection {
         xout[globalIdx] = val;
     }
 
+    /**
+     * Performs matrix multiplication between the weight matrix (W) and the input vector (x).
+     * It is implemented using TornadoVM's Kernel API.
+     * The weight matrix w and the input vector x are TornadoVM {@link VectorFloat16} vectors, and reside off-heap.
+     *
+     * @param xout    The output vector of the matrix multiplication.
+     * @param x       The input vector to be multiplied with the weight matrix, represented as a {@link VectorFloat16}.
+     * @param w       The weight matrix represented as a {@link VectorFloat16}.
+     * @param n       The number of columns in the weight matrix and the size of the input vector.
+     * @param context The kernel context object is used to access low-level parallel programming components
+     *                (e.g. global and local thread id, etc.).
+     */
     static void matrixVectorFloat16withContext(float[] xout, VectorFloat16 x, VectorFloat16 w, int n, KernelContext context) {
         int idx = context.globalIdx;
         float val = 0f;
@@ -187,6 +292,18 @@ public class MatrixVectorCollection {
         xout[idx] = val;
     }
 
+    /**
+     * Performs matrix multiplication between the weight matrix (W) and the input vector (x).
+     * It is implemented using TornadoVM's Kernel API.
+     * The weight matrix w and the input vector x are TornadoVM {@link VectorFloat8} vectors, and reside off-heap.
+     *
+     * @param xout    The output vector of the matrix multiplication.
+     * @param x       The input vector to be multiplied with the weight matrix, represented as a {@link VectorFloat8}.
+     * @param w       The weight matrix represented as a {@link VectorFloat8}.
+     * @param n       The number of columns in the weight matrix and the size of the input vector.
+     * @param context The kernel context object is used to access low-level parallel programming components
+     *                (e.g. global and local thread id, etc.).
+     */
     static void matrixVectorFloat8KwithContext(float[] xout, VectorFloat8 x, VectorFloat8 w, int n, KernelContext context) {
         int idx = context.globalIdx;
         int vectorLaneWidth = w.vectorWidth();
@@ -199,6 +316,18 @@ public class MatrixVectorCollection {
         xout[idx] = val;
     }
 
+    /**
+     * Performs matrix multiplication between the weight matrix (W) and the input vector (x).
+     * It is implemented using TornadoVM's Kernel API.
+     * The weight matrix w and the input vector x are TornadoVM {@link VectorFloat4} vectors, and reside off-heap.
+     *
+     * @param xout    The output vector of the matrix multiplication.
+     * @param x       The input vector to be multiplied with the weight matrix, represented as a {@link VectorFloat4}.
+     * @param w       The weight matrix represented as a {@link VectorFloat4}.
+     * @param n       The number of columns in the weight matrix and the size of the input vector.
+     * @param context The kernel context object is used to access low-level parallel programming components
+     *                (e.g. global and local thread id, etc.).
+     */
     static void matrixVectorFloat4withContext(float[] xout, VectorFloat4 x, VectorFloat4 w, int n, KernelContext context) {
         int idx = context.globalIdx;
         float val = 0f;
