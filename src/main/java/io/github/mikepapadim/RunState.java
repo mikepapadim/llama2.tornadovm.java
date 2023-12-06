@@ -5,6 +5,9 @@ import uk.ac.manchester.tornado.api.types.collections.VectorFloat16;
 import uk.ac.manchester.tornado.api.types.collections.VectorFloat4;
 import uk.ac.manchester.tornado.api.types.collections.VectorFloat8;
 
+/**
+ * This class is used to maintain the state of the model during processing.
+ */
 public class RunState {
     // current wave of activations
     final float[] x; // activation at current time stamp (dim,)
@@ -26,6 +29,11 @@ public class RunState {
     final VectorFloat4 xVectorFloat4; // activation at current time stamp (dim,) in VectorFloat4
     final FloatArray xfa; // activation at current time stamp (dim,) in FloatArray
 
+    /**
+     * Constructs a {@code RunState} object using the provided {@link Config}.
+     *
+     * @param config The {@link Config} object containing transformer model configuration.
+     */
     RunState(Config config) {
         int kv_dim = (config.dim * config.n_kv_heads) / config.n_heads;
         this.x = new float[config.dim];
