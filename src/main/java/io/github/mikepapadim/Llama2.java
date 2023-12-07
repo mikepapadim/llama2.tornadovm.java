@@ -2,7 +2,6 @@ package io.github.mikepapadim;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
@@ -13,17 +12,19 @@ import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
 import uk.ac.manchester.tornado.api.enums.DataTransferMode;
 
 /**
- * This class provides an implementation of the Llama-2 neural network model in {@link https://github.com/mukel/llama2.java},
- * extended to offload the computational heavy parts on heterogeneous devices using TornadoVM.
- * It includes methods for generating text, tokenization, and sampling.
- * Additionally, it offers four different execution modes, one using the Vector API, and three TornadoVM modes,
- * with Vector4, Vector8 and Vector16 types.
+ * This class provides an implementation of the Llama-2 neural network model in
+ * {@link https://github.com/mukel/llama2.java}, extended to offload the
+ * computational heavy parts on heterogeneous devices using TornadoVM. It
+ * includes methods for generating text, tokenization, and sampling.
+ * Additionally, it offers four different execution modes, one using the Vector
+ * API, and three TornadoVM modes, with Vector4, Vector8 and Vector16 types.
  */
 class Llama2 {
 
     /**
-     * Static variables that represent the different execution modes.
-     * By default the Vector API is enabled, but this can be configured through the respective system properties.
+     * Static variables that represent the different execution modes. By default the
+     * Vector API is enabled, but this can be configured through the respective
+     * system properties.
      */
     static final boolean USE_VECTOR_API = getBooleanProperty("VectorAPI", true);
     static final boolean USE_VECTORFLOAT4 = getBooleanProperty("VectorFloat4", false);
@@ -37,10 +38,11 @@ class Llama2 {
     // ============= Utility functions =============
 
     /**
-     * Creates the appropriate TornadoVM execution plan based on the selected execution mode (i.e.,
-     * VectorFloat4, VectorFloat8, VectorFloat16).
+     * Creates the appropriate TornadoVM execution plan based on the selected
+     * execution mode (i.e., VectorFloat4, VectorFloat8, VectorFloat16).
      *
-     * @param transformer The Transformer model used for sequence generation.
+     * @param transformer
+     *            The Transformer model used for sequence generation.
      * @return The TornadoVM execution plan for the specified execution mode
      */
     private static TornadoExecutionPlan createTornadoExecutionPlan(Transformer transformer) {
@@ -90,7 +92,8 @@ class Llama2 {
     /**
      * Used for printing the printable characters and whitespaces.
      *
-     * @param piece The tokens to be printed.
+     * @param piece
+     *            The tokens to be printed.
      */
     static void safe_printf(String piece) {
         if (piece == null || piece.isEmpty()) {
@@ -108,18 +111,24 @@ class Llama2 {
         System.out.print(piece);
     }
 
-    //============= Computation =============
+    // ============= Computation =============
 
     /**
-     * Byte Pair Encoding (BPE) Tokenizer that translates strings to tokens, considering the previous
-     * token in the sequence. It performs additional processing to handle specific cases, such as stripping
-     * leading whitespace after a Beginning of Sentence (BOS) token or decoding raw byte tokens.
+     * Byte Pair Encoding (BPE) Tokenizer that translates strings to tokens,
+     * considering the previous token in the sequence. It performs additional
+     * processing to handle specific cases, such as stripping leading whitespace
+     * after a Beginning of Sentence (BOS) token or decoding raw byte tokens.
      *
-     * @param t            The Tokenizer containing the vocabulary and necessary decoding information.
-     * @param prev_token   The token preceding the current token in the sequence.
-     * @param token        The token to decode.
-     * @return             The decoded string representation of the token, considering the context
-     *                    of the previous token and handling special cases like raw byte tokens.
+     * @param t
+     *            The Tokenizer containing the vocabulary and necessary decoding
+     *            information.
+     * @param prev_token
+     *            The token preceding the current token in the sequence.
+     * @param token
+     *            The token to decode.
+     * @return The decoded string representation of the token, considering the
+     *         context of the previous token and handling special cases like raw
+     *         byte tokens.
      */
     static String decode(Tokenizer t, int prev_token, int token) {
         String piece = t.vocab[token];
@@ -133,36 +142,48 @@ class Llama2 {
         if (piece.length() == 6 && piece.startsWith(prefix) && piece.endsWith(suffix)) {
             String hex2 = piece.substring(prefix.length(), prefix.length() + 2);
             char ch = (char) Integer.parseInt(hex2, 16);
-            // only print printable chars or whitespace, excluding control codes, backspace, etc.
+            // only print printable chars or whitespace, excluding control codes, backspace,
+            // etc.
             piece = Character.toString(ch);
         }
         return piece;
     }
 
     /**
-     * Efficiently finds the perfect match for a given string in a sorted vocabulary.
+     * Efficiently finds the perfect match for a given string in a sorted
+     * vocabulary.
      *
-     * @param str           The string to look up in the vocabulary.
-     * @param sorted_vocab  A map representing the sorted vocabulary, where keys are strings and
-     *                      values are corresponding indices.
-     * @return              The index of the exact match in the vocabulary, or -1 if not found.
+     * @param str
+     *            The string to look up in the vocabulary.
+     * @param sorted_vocab
+     *            A map representing the sorted vocabulary, where keys are strings
+     *            and values are corresponding indices.
+     * @return The index of the exact match in the vocabulary, or -1 if not found.
      */
     static int str_lookup(String str, Map<String, Integer> sorted_vocab) {
         return sorted_vocab.getOrDefault(str, -1);
     }
 
     /**
-     * Encodes a given text into a sequence of tokens using the provided Tokenizer, with optional
-     * Beginning of Sentence (BOS) and End of Sentence (EOS) tokens.
+     * Encodes a given text into a sequence of tokens using the provided Tokenizer,
+     * with optional Beginning of Sentence (BOS) and End of Sentence (EOS) tokens.
      *
-     * @param t         The Tokenizer containing the vocabulary and scoring information.
-     * @param text      The text to be encoded into tokens.
-     * @param bos       A boolean indicating whether to prepend a BOS token (true) or not (false).
-     * @param eos       A boolean indicating whether to append an EOS token (true) or not (false).
-     * @param tokens    An array preallocated to store the resulting sequence of tokens.
-     * @return          The number of tokens in the encoded sequence.
+     * @param t
+     *            The Tokenizer containing the vocabulary and scoring information.
+     * @param text
+     *            The text to be encoded into tokens.
+     * @param bos
+     *            A boolean indicating whether to prepend a BOS token (true) or not
+     *            (false).
+     * @param eos
+     *            A boolean indicating whether to append an EOS token (true) or not
+     *            (false).
+     * @param tokens
+     *            An array preallocated to store the resulting sequence of tokens.
+     * @return The number of tokens in the encoded sequence.
      *
-     * @throws          RuntimeException if the input text is null.
+     * @throws RuntimeException
+     *             if the input text is null.
      */
     static int encode(Tokenizer t, String text, boolean bos, boolean eos, int[] tokens) {
 
@@ -261,10 +282,13 @@ class Llama2 {
     /**
      * Samples an index from an array of probabilities.
      *
-     * @param probabilities An array of probabilities. The sum of all probabilities must be 1.
-     * @param n             The number of elements in the probabilities array.
-     * @param coin          A random value between 0 and 1 used for sampling.
-     * @return              The index sampled based on the provided probabilities.
+     * @param probabilities
+     *            An array of probabilities. The sum of all probabilities must be 1.
+     * @param n
+     *            The number of elements in the probabilities array.
+     * @param coin
+     *            A random value between 0 and 1 used for sampling.
+     * @return The index sampled based on the provided probabilities.
      */
     static int sample_mult(float[] probabilities, int n, float coin) {
         float cdf = 0.0f;
@@ -280,9 +304,12 @@ class Llama2 {
     /**
      * Swaps two elements from a specified array.
      *
-     * @param array    The array for which the elements will be swapped.
-     * @param from     The index of the first element to be swapped.
-     * @param to       The index of the second element to be swapped.
+     * @param array
+     *            The array for which the elements will be swapped.
+     * @param from
+     *            The index of the first element to be swapped.
+     * @param to
+     *            The index of the second element to be swapped.
      */
     static void swap(int[] array, int from, int to) {
         int tmp = array[from];
@@ -293,10 +320,14 @@ class Llama2 {
     /**
      * Performs a sift-down on a specified integer array.
      *
-     * @param array      The integer array on which the sift-down will be performed.
-     * @param from       The index from which to start the sift-down operation.
-     * @param n          The number of elements.
-     * @param comparator The comparator to determine the order of elements.
+     * @param array
+     *            The integer array on which the sift-down will be performed.
+     * @param from
+     *            The index from which to start the sift-down operation.
+     * @param n
+     *            The number of elements.
+     * @param comparator
+     *            The comparator to determine the order of elements.
      */
     static void siftDown(int[] array, int from, int n, Comparator<Integer> comparator) {
         int prev = from,next;
@@ -315,16 +346,22 @@ class Llama2 {
     }
 
     /**
-     * Performs top-p sampling (or "nucleus sampling") to sample from a set of tokens
-     * that exceed a certain probability threshold (topp). This method ensures that tokens
-     * with very low probabilities are less likely to be sampled.
+     * Performs top-p sampling (or "nucleus sampling") to sample from a set of
+     * tokens that exceed a certain probability threshold (topp). This method
+     * ensures that tokens with very low probabilities are less likely to be
+     * sampled.
      *
-     * @param probabilities The array of probabilities for each token.
-     * @param n             The number of tokens.
-     * @param topp          The probability threshold for sampling.
-     * @param indices       An array to store the indices of the sampled tokens.
-     * @param coin          A random number in [0, 1), usually obtained from random_f32().
-     * @return              The index of the sampled token.
+     * @param probabilities
+     *            The array of probabilities for each token.
+     * @param n
+     *            The number of tokens.
+     * @param topp
+     *            The probability threshold for sampling.
+     * @param indices
+     *            An array to store the indices of the sampled tokens.
+     * @param coin
+     *            A random number in [0, 1), usually obtained from random_f32().
+     * @return The index of the sampled token.
      */
     static int sample_topp(float[] probabilities, int n, float topp, int[] indices, float coin) {
         Comparator<Integer> comparator = Comparator.<Integer>comparingDouble(i -> probabilities[i]).reversed();
@@ -377,11 +414,14 @@ class Llama2 {
     }
 
     /**
-     * Uses greedy argmax sampling to return the index of the token with the highest probability.
+     * Uses greedy argmax sampling to return the index of the token with the highest
+     * probability.
      *
-     * @param probabilities The array of probabilities for each token.
-     * @param n             The number of tokens.
-     * @return              The index of the token with the highest probability.
+     * @param probabilities
+     *            The array of probabilities for each token.
+     * @param n
+     *            The number of tokens.
+     * @return The index of the token with the highest probability.
      */
     static int sample_argmax(float[] probabilities, int n) {
         // return the index that has the highest probability
@@ -399,9 +439,13 @@ class Llama2 {
     /**
      * Samples a token based on the given logits and sampler parameters.
      *
-     * @param sampler The sampler configuration containing temperature and other hyperparameters.
-     * @param logits  The array of logits representing the unnormalized probability distribution.
-     * @return  The sampled token index.
+     * @param sampler
+     *            The sampler configuration containing temperature and other
+     *            hyperparameters.
+     * @param logits
+     *            The array of logits representing the unnormalized probability
+     *            distribution.
+     * @return The sampled token index.
      */
     static int sample(Sampler sampler, float[] logits) {
         int next;
@@ -430,13 +474,19 @@ class Llama2 {
     }
 
     /**
-     * Generates a sequence of tokens using the provided Transformer model, Tokenizer, Sampler, and input prompt.
+     * Generates a sequence of tokens using the provided Transformer model,
+     * Tokenizer, Sampler, and input prompt.
      *
-     * @param transformer The Transformer model used for sequence generation.
-     * @param tokenizer   The Tokenizer for encoding and decoding tokens.
-     * @param sampler     The Sampler for sampling the next token based on logits.
-     * @param prompt      The input prompt to start the generation process.
-     * @param steps       The maximum number of steps (tokens) to generate.
+     * @param transformer
+     *            The Transformer model used for sequence generation.
+     * @param tokenizer
+     *            The Tokenizer for encoding and decoding tokens.
+     * @param sampler
+     *            The Sampler for sampling the next token based on logits.
+     * @param prompt
+     *            The input prompt to start the generation process.
+     * @param steps
+     *            The maximum number of steps (tokens) to generate.
      */
     static void generate(Transformer transformer, Tokenizer tokenizer, Sampler sampler, String prompt, int steps) {
         String empty_prompt = "";
@@ -453,9 +503,7 @@ class Llama2 {
             System.exit(1);
         }
 
-        ArrayList<TornadoExecutionPlan> te = new ArrayList<>();
-
-        te.add(createTornadoExecutionPlan(transformer));
+        TornadoExecutionPlan tornadoExecutionPlan = createTornadoExecutionPlan(transformer);
 
         long start = 0; // used to time our code, only initialized after first iteration
         int next; // will store the next token in the sequence
@@ -463,7 +511,7 @@ class Llama2 {
         int pos = 0; // position in the sequence
         while (pos < steps) {
             // forward the transformer to get logits for the next token
-            float[] logits = InferenceEngine.forward(transformer, token, pos, te);
+            float[] logits = InferenceEngine.forward(transformer, token, pos, tornadoExecutionPlan);
 
             // Advance the state machine
             next = (pos < num_prompt_tokens - 1) ? prompt_tokens[pos + 1] : sample(sampler, logits);
@@ -501,7 +549,8 @@ class Llama2 {
     /**
      * Reads a line from the stdin, up but not including the newline character.
      *
-     * @param guide The prompt to display before reading the input.
+     * @param guide
+     *            The prompt to display before reading the input.
      * @return The line read from the standard input.
      */
     static String read_stdin(String guide) {
@@ -515,15 +564,22 @@ class Llama2 {
     }
 
     /**
-     * Simulates a chat conversation with the Transformer model using given prompts and system input.
-     * The conversation alternates between user and assistant turns until the specified number of steps is reached.
+     * Simulates a chat conversation with the Transformer model using given prompts
+     * and system input. The conversation alternates between user and assistant
+     * turns until the specified number of steps is reached.
      *
-     * @param transformer     The Transformer model used for generating responses.
-     * @param tokenizer       The Tokenizer for encoding and decoding text.
-     * @param sampler         The Sampler for sampling tokens based on logits.
-     * @param cli_user_prompt The optional user prompt provided via the command line.
-     * @param cli_system_prompt The optional system prompt provided via the command line.
-     * @param steps           The maximum number of conversation steps.
+     * @param transformer
+     *            The Transformer model used for generating responses.
+     * @param tokenizer
+     *            The Tokenizer for encoding and decoding text.
+     * @param sampler
+     *            The Sampler for sampling tokens based on logits.
+     * @param cli_user_prompt
+     *            The optional user prompt provided via the command line.
+     * @param cli_system_prompt
+     *            The optional system prompt provided via the command line.
+     * @param steps
+     *            The maximum number of conversation steps.
      */
     static void chat(Transformer transformer, Tokenizer tokenizer, Sampler sampler, String cli_user_prompt, String cli_system_prompt, int steps) {
 

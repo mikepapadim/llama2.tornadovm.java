@@ -1,7 +1,6 @@
 package io.github.mikepapadim;
 
 import java.nio.FloatBuffer;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.stream.IntStream;
 
@@ -21,13 +20,17 @@ public class InferenceEngine {
     /**
      * Performs forward inference using the Transformer model.
      *
-     * @param transformer The Transformer model to use for inference.
-     * @param token The input token for processing.
-     * @param pos The position of the input token in the sequence.
-     * @param executionPlan The list of TornadoExecutionPlan objects for execution.
+     * @param transformer
+     *            The Transformer model to use for inference.
+     * @param token
+     *            The input token for processing.
+     * @param pos
+     *            The position of the input token in the sequence.
+     * @param executionPlan
+     *            The list of TornadoExecutionPlan objects for execution.
      * @return The output logits produced by the Transformer model.
      */
-    static float[] forward(Transformer transformer, int token, int pos, ArrayList<TornadoExecutionPlan> executionPlan) {
+    static float[] forward(Transformer transformer, int token, int pos, TornadoExecutionPlan executionPlan) {
         Config p = transformer.config;
         Weights w = transformer.weights;
         RunState s = transformer.state;
@@ -154,15 +157,19 @@ public class InferenceEngine {
             convertToVectorFloat4(s.xVectorFloat4, s.x);
         }
 
-        executionPlan.get(0).execute();
+        executionPlan.execute();
 
         return s.logits;
     }
 
     /**
      * Converts a primitive float array to a TornadoVM {@link VectorFloat16}.
-     * @param destination The {@link VectorFloat16} that will store the data of the float array.
-     * @param source The input data for the {@link VectorFloat16}.
+     * 
+     * @param destination
+     *            The {@link VectorFloat16} that will store the data of the float
+     *            array.
+     * @param source
+     *            The input data for the {@link VectorFloat16}.
      */
     static void convertToVectorFloat16(VectorFloat16 destination, float[] source) {
         int numVectors = source.length / destination.vectorWidth();
@@ -177,8 +184,12 @@ public class InferenceEngine {
 
     /**
      * Converts a primitive float array to a TornadoVM {@link VectorFloat8}.
-     * @param destination The {@link VectorFloat8} that will store the data of the float array.
-     * @param source The input data for the {@link VectorFloat8}.
+     * 
+     * @param destination
+     *            The {@link VectorFloat8} that will store the data of the float
+     *            array.
+     * @param source
+     *            The input data for the {@link VectorFloat8}.
      */
     static void convertToVectorFloat8(VectorFloat8 destination, float[] source) {
         int numVectors = source.length / 8;
@@ -193,8 +204,12 @@ public class InferenceEngine {
 
     /**
      * Converts a primitive float array to a TornadoVM {@link VectorFloat4}.
-     * @param destination The {@link VectorFloat4} that will store the data of the float array.
-     * @param source The input data for the {@link VectorFloat4}.
+     * 
+     * @param destination
+     *            The {@link VectorFloat4} that will store the data of the float
+     *            array.
+     * @param source
+     *            The input data for the {@link VectorFloat4}.
      */
     static void convertToVectorFloat4(VectorFloat4 destination, float[] source) {
         int numVectors = source.length / 4;
@@ -208,11 +223,15 @@ public class InferenceEngine {
     }
 
     /**
-     * Applies the SwiGLU non-linearity to the output of the first layer in the Transformer model.
+     * Applies the SwiGLU non-linearity to the output of the first layer in the
+     * Transformer model.
      *
-     * @param hidden_dim The hidden dimension of the model.
-     * @param out The output array to store the result.
-     * @param hb2 The array representing the hidden layer output.
+     * @param hidden_dim
+     *            The hidden dimension of the model.
+     * @param out
+     *            The output array to store the result.
+     * @param hb2
+     *            The array representing the hidden layer output.
      */
     static void fusedSiluEwiseMul(int hidden_dim, float[] out, float[] hb2) {
         for (int i = 0; i < hidden_dim; i++) {
@@ -225,11 +244,15 @@ public class InferenceEngine {
     }
 
     /**
-     * Applies the residual connection by element-wise addition of the input and residual vectors.
+     * Applies the residual connection by element-wise addition of the input and
+     * residual vectors.
      *
-     * @param s The input vector.
-     * @param xb2 The residual vector to be added.
-     * @param dim The dimension of the vectors.
+     * @param s
+     *            The input vector.
+     * @param xb2
+     *            The residual vector to be added.
+     * @param dim
+     *            The dimension of the vectors.
      */
     static void residualConnection(float[] s, float[] xb2, int dim) {
         for (int i = 0; i < dim; i++) {
@@ -240,10 +263,14 @@ public class InferenceEngine {
     /**
      * Applies root mean square normalization to the input vector.
      *
-     * @param o The output vector.
-     * @param x The input vector.
-     * @param weight The weight values for normalization.
-     * @param size The size of the vectors.
+     * @param o
+     *            The output vector.
+     * @param x
+     *            The input vector.
+     * @param weight
+     *            The weight values for normalization.
+     * @param size
+     *            The size of the vectors.
      */
     static void rmsnorm(float[] o, float[] x, FloatBuffer weight, int size) {
         // calculate sum of squares
@@ -263,9 +290,12 @@ public class InferenceEngine {
     /**
      * Applies the softmax function to a portion of the input array.
      *
-     * @param x The input array.
-     * @param xOffset The offset within the input array.
-     * @param size The size of the portion to apply softmax.
+     * @param x
+     *            The input array.
+     * @param xOffset
+     *            The offset within the input array.
+     * @param size
+     *            The size of the portion to apply softmax.
      */
     static void softmax(float[] x, int xOffset, int size) {
         // find max value (for numerical stability)
