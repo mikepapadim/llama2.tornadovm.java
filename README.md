@@ -41,16 +41,19 @@ The repository contains a `run.sh` script for running. This script takes the fol
 * The TornadoVM Vector mode (optional)
 * The .bin model file
 
+Additionally, the script can take an optional that enables the execution of the program in pure Java, without TornadoVM.
+
 ```bash
 // Run with just the model 
-./run.sh stories15M.bin not working 
+./run.sh stories15M.bin 
 // Run with the workgroup size and the model
 ./run.sh -n 128 stories15M.bin
 // Run with the workgroup size, the [VectorFloat4|VectorFloat8|VectorFloat16] types and the model
 ./run.sh -n 128 -v -Dllama2.VectorFloat4=true stories15M.bin
 // Run with the [VectorFloat4|VectorFloat8|VectorFloat16] types and the model
 ./run.sh -v -Dllama2.VectorFloat4=true stories15M.bin
-
+// Run in pure Java, without TornadoVM
+./run.sh -j java
 ```
 
 ## Performance

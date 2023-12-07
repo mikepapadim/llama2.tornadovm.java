@@ -2,13 +2,18 @@
 
 # Print usage information
 usage() {
-  echo "Usage: $0 [-n <workgroup size> -v <-Dllama2.Vector[Float4|Float8|Float16]=true>] <.bin file>"
+  echo "Usage:"
+  echo "TornadoVM Execution: $0 [-n <workgroup size> -v <-Dllama2.Vector[Float4|Float8|Float16]=true>] <.bin file>"
+  echo "Java Execution: $0 -j java <.bin file>"
   exit 1
 }
 
 # Execute Llama2 with TornadoVM
 execute_command() {
-  if [ -n "$workgroup_size" ]; then
+  if [ -n "$java" ]; then
+        echo "Running Llama2 with pure Java"
+        tornado --jvm=" -Dllama2.Java=true " -cp target/tornadovm-llama-gpu-1.0-SNAPSHOT.jar io.github.mikepapadim.Llama2 $token_file
+  elif [ -n "$workgroup_size" ]; then
     if [ -n "$vector_mode" ]; then 
       echo "Running Llama2 with TornadoVM: workgroup size=$workgroup_size, token file=$token_file, vector mode=$vector_mode"
       tornado --jvm=" -Ds0.t0.local.workgroup.size=$workgroup_size $vector_mode" -cp target/tornadovm-llama-gpu-1.0-SNAPSHOT.jar io.github.mikepapadim.Llama2 $token_file
@@ -27,16 +32,19 @@ execute_command() {
   fi
 }
 
-# Parse command line options to identify the workgroup size, if provided
+# Parse command line options to identify arguments for the workgroup size, the vector type, or the java execution mode, if provided
 parse_options() {
-  while getopts ":n:v:" opt; do
+  while getopts ":n:v:j:" opt; do
     case $opt in
       n)
         workgroup_size="$OPTARG"
         ;;
       v)
-	vector_mode="$OPTARG"
-	;;
+	      vector_mode="$OPTARG"
+	      ;;
+	    j)
+	      java="$OPTARG"
+	      ;;
       \?)
         echo "Invalid option: -$OPTARG" >&2
         usage
