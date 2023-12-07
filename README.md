@@ -1,6 +1,6 @@
 # An extension of the Llama2.java implementation, accelerated with GPUs by using TornadoVM
 
-This repository provides an implementation of [llama2.java](https://github.com/mukel/llama2.java), extended to use the Vector API and [TornadoVM](https://github.com/beehive-lab/TornadoVM) for acceleration.
+This repository provides an implementation of [llama2.java](https://github.com/mukel/llama2.java), extended to use [TornadoVM](https://github.com/beehive-lab/TornadoVM) for GPU acceleration of the original Java code.
 Additionally, developers can optionally run with three different vector types, Vector4, Vector8 or Vector16, optimized by TornadoVM.
 
 ## Prerequisites
