@@ -14,7 +14,7 @@ parser.add_argument(
 args = parser.parse_args()
 
 # List of dataset names
-datasets = ["stories15M", "stories42M", "stories100M"]
+datasets = ["stories15M", "stories42M", "stories110M"]
 
 # List of vector configurations
 vector_configs = [
