@@ -1,4 +1,4 @@
-# An extension of the Llama2.java implementation, accelerated with GPUs by using TornadoVM
+# Enhanced Llama2.java Implementation: Leveraging GPU Acceleration with TornadoVM
 
 ![tornadovm-java](https://github.com/mikepapadim/llama2.tornadovm.java/assets/8652854/1735f049-b8bb-431c-b18f-b183c94d7547)
 
