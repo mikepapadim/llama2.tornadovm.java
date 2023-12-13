@@ -84,7 +84,7 @@ We record in the following table the maximum of tokens per second achieved after
 |  stories15M.bin |  718 |  **1.15x** | llama2TornadoVM.java |
 |  stories15M.bin |   626 | 1.0 | llama2.java |
 | stories42M.bin |    326 |  **1.16x** | llama2TornadoVM.java    |
-| stories420M.bin |   281 | 1.0 | llama2.java |
+| stories42M.bin |   281 | 1.0 | llama2.java |
 | stories110M.bin |  137 |  **1.09x** | llama2TornadoVM.java    |
 | stories110M.bin |  126 | 1.0 | llama2.java |
 
