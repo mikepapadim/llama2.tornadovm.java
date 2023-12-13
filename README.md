@@ -88,7 +88,7 @@ We record in the following table the maximum of tokens per second achieved after
 | stories110M.bin |  137 |  **1.09x** | llama2TornadoVM.java    |
 | stories110M.bin |  126 | 1.0 | llama2.java |
 
-In addition, we run the original implementation of [llama2.c]([https://github.com/mukel/llama2.java](https://github.com/karpathy/llama2.c). To fair comparsion we compile it for OpenMP and profile it with the maximum number of threads available in our system, as in: 
+In addition, we run the original implementation of [llama2.c](https://github.com/karpathy/llama2.c). For a fair comparison, we compile it for OpenMP and profile it with the maximum number of threads available in our system, as in: 
 
 ``clang -Ofast -fopenmp -march=native run.c  -lm  -o run``
 
