@@ -88,8 +88,29 @@ We record in the following table the maximum of tokens per second achieved after
 | stories110M.bin |  137 |  **1.09x** | llama2TornadoVM.java    |
 | stories110M.bin |  126 | 1.0 | llama2.java |
 
+In addition, we run the original implementation of [llama2.c]([https://github.com/mukel/llama2.java](https://github.com/karpathy/llama2.c). To fair comparsion we compile it for OpenMP and profile it with the maximum number of threads available in our system, as in: 
+
+``clang -Ofast -fopenmp -march=native run.c  -lm  -o run``
+
+``OMP_NUM_THREADS=24 ./run stories110.bin``
+
+The following showcases that the TornadoVM extension closes the gap in the pure native implementation to 0.98% of the performance achieved by the largest model available.
+|      Model       | Tokens per second | Speedup vs. llama2.c |    Implementation      |
+|:----------------:|:-----------------:|:---------------------:|:-----------------------:|
+| stories15M.bin   |        718        |          0.55         | llama2TornadoVM.java   |
+| stories15M.bin   |        626        |          0.47         | llama2.java          |
+| stories15M.bin   |       1314        |           1.0         | llama2.c           |
+| stories42M.bin   |        326        |          0.91         | llama2TornadoVM.java   |
+| stories42M.bin   |        281        |          0.77         | llama2.java          |
+| stories42M.bin   |        362        |           1.0         | llama2.c           |
+| stories110M.bin  |        137        |          0.98         | llama2TornadoVM.java   |
+| stories110M.bin  |        126        |           0.9         | llama2.java          |
+| stories110M.bin  |        140        |           1.0         | llama2.c           |
+
+
 ----------------------------------------------
 
 ## License
 
-MIT
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
