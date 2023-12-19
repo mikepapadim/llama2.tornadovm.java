@@ -1,12 +1,10 @@
 # Enhanced Llama2.java Implementation: Leveraging GPU Acceleration with TornadoVM
 
 
-<img align="left" width="260" height="260" src="https://github.com/mikepapadim/llama2.tornadovm.java/assets/8652854/1735f049-b8bb-431c-b18f-b183c94d7547">
+<img align="left" width="340" height="340" src="https://github.com/mikepapadim/llama2.tornadovm.java/assets/8652854/1735f049-b8bb-431c-b18f-b183c94d7547">
 
 This repository provides an implementation of [llama2.java](https://github.com/mukel/llama2.java), extended to use [TornadoVM](https://github.com/beehive-lab/TornadoVM) for GPU acceleration of the original Java code.
 Additionally, developers can optionally run with three different vector types, Vector4, Vector8 or Vector16, optimized by TornadoVM.
-
-<img align="right" width="730" height="730" src="https://github.com/mikepapadim/llama2.tornadovm.java/assets/8652854/86adf53f-ea4e-4982-8e50-2bb5b3931a8c">
 
 ## Prerequisites
 * **JDK 21+**: This is essential as the project uses the [Project Panama](https://openjdk.org/projects/panama/) for native memory allocation. 
@@ -60,6 +58,9 @@ Additionally, the script can take an optional that enables the execution of the 
 // Run in pure Java, without TornadoVM
 ./run.sh -j java
 ```
+<br />
+<img align="center" width="640" height="640" src="https://github.com/mikepapadim/llama2.tornadovm.java/assets/8652854/86adf53f-ea4e-4982-8e50-2bb5b3931a8c">
+<br />
 
 ## Performance
 
