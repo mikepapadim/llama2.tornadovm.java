@@ -29,6 +29,26 @@ And finally, compile the project by running this script:
 ./compile.sh
 ```
 
+Project layout:
+```bash
+├── src
+│   ├── main
+│   │   └── java
+│   │       └── io
+│   │           └── github
+│   │               └── mikepapadim
+│   │                   ├── Config.java 
+│   │                   ├── InferenceEngine.java          --> Implementation of the LLM architecture
+│   │                   ├── Llama2.java                   --> Main class
+│   │                   ├── MatrixVectorCollection.java   --> A collection of Matrix-Vector methods using the TornadovVM API and the VectorAPi
+│   │                   ├── RunState.java
+│   │                   ├── Sampler.java
+│   │                   ├── Tokenizer.java
+│   │                   ├── Transformer.java
+│   │                   └── Weights.java                  --> A helper class to initialize and store the model weights through the Panama API
+
+```
+
 ## Execution
 ### Token files
 Just like the original Java implementation, the program requires a `tokenizer.bin` file and the input models available in the TinyLlamas. 
