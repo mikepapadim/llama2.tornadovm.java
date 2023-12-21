@@ -78,9 +78,9 @@ Additionally, the script can take an optional that enables the execution of the 
 // Run in pure Java, without TornadoVM
 ./run.sh -j java
 ```
-<br />
-<img align="center" width="640" height="640" src="https://github.com/mikepapadim/llama2.tornadovm.java/assets/8652854/86adf53f-ea4e-4982-8e50-2bb5b3931a8c">
-<br />
+<p align="center">
+  <img width="640" height="640" src="https://github.com/mikepapadim/llama2.tornadovm.java/assets/8652854/86adf53f-ea4e-4982-8e50-2bb5b3931a8c">
+</p>
 
 ## Performance
 
