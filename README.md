@@ -133,6 +133,9 @@ The following showcases that the TornadoVM extension closes the gap in the pure 
 
 
 ----------------------------------------------
+Acknowledgement
+
+Special thanks to Alfonso Peterssen [(mukel)](https://github.com/mukel) for the original llama2.java implementation along with his help for this port.
 
 ## License
 
