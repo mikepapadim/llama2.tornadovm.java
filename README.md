@@ -3,7 +3,7 @@
 
 <img align="left" width="340" height="340" src="https://github.com/mikepapadim/llama2.tornadovm.java/assets/8652854/1735f049-b8bb-431c-b18f-b183c94d7547">
 
-This repository provides an implementation of [llama2.java](https://github.com/mukel/llama2.java), extended to use [TornadoVM](https://github.com/beehive-lab/TornadoVM) for GPU acceleration of the original Java code.
+This repository provides an implementation of [llama2.java](https://github.com/mukel/llama2.java), extended to use [TornadoVM](https://github.com/beehive-lab/TornadoVM) to offer GPU acceleration of the original Java code.
 Additionally, developers can optionally run with three different vector types, Vector4, Vector8 or Vector16, optimized by TornadoVM.
 
 ## Prerequisites
@@ -51,7 +51,7 @@ Project layout:
 
 ## Execution
 ### Token files
-Just like the original Java implementation, the program requires a `tokenizer.bin` file and the input models available in the TinyLlamas. 
+Just like the [original Java implementation](https://github.com/mukel/llama2.java), the program requires a `tokenizer.bin` file and the input models available in the [TinyLlamas](https://huggingface.co/karpathy/tinyllamas). 
 ```bash
 wget https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
 wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
