@@ -1,0 +1,24 @@
+# Apache Maven
+target
+
+# IntelliJ Idea
+.idea
+*.iml
+*.ipr
+*.iws
+.buildpath
+
+# Eclipse
+.project
+.classpath
+.settings
+
+# Emacs
+*~
+*#
+.#*
+.ensime
+TAGS
+
+# other
+*.bin
