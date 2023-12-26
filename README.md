@@ -8,12 +8,14 @@ Additionally, developers can optionally run with three different vector types, V
 
 ## Prerequisites
 * **JDK 21+**: This is essential as the project uses the [Project Panama](https://openjdk.org/projects/panama/) for native memory allocation. 
+* **Apache Maven 3+**: A build tool for the project that should be [downloaded](https://maven.apache.org/download.cgi) and [installed](https://maven.apache.org/install.html).
 * **TornadoVM**: Detailed installation instructions can be found [here](https://tornadovm.readthedocs.io/en/latest/installation.html).  
 
 ## Build
 The `set_paths.sh` file provides a template with all the paths that need to be set up for the compilation and execution.
 From this template, the paths that need to be set are: 
 * **$JAVA_HOME**, with the path to JDK 21
+* **$MVN_HOME**, with the path to Apache Maven 3
 * **$TORNADO_ROOT**, with the path to the TornadoVM installation  
 * **$LLAMA_ROOT**, with the path of this project.
 
@@ -63,6 +65,8 @@ The repository contains a `run.sh` script for running. This script takes the fol
 * The TornadoVM workgroup size (optional)
 * The TornadoVM Vector mode (optional)
 * The .bin model file
+
+For running with TornadoVM you should have properly installed drivers for GPU(s).
 
 Additionally, the script can take an optional that enables the execution of the program in pure Java, without TornadoVM.
 
