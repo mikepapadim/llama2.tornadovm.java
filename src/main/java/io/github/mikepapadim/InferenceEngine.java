@@ -148,14 +148,9 @@ public class InferenceEngine {
 
         // final rmsnorm
         rmsnorm(s.x, s.x, w.rms_final_weight, dim);
-
-        if (Llama2.USE_VECTORFLOAT16) {
-            convertToVectorFloat16(s.xVectorFloat16, s.x);
-        } else if (Llama2.USE_VECTORFLOAT8) {
-            convertToVectorFloat8(s.xVectorFloat8, s.x);
-        } else if (Llama2.USE_VECTORFLOAT4) {
-            convertToVectorFloat4(s.xVectorFloat4, s.x);
-        }
+        // MatrixVectorCollection.matmul(s.logits, s.x, w.wcls, dim, p.vocab_size);
+        // MatrixVectorCollection.matmul(s.logits, s.x, w.weightTensor, dim,
+        // p.vocab_size);
 
         executionPlan.execute();
 
