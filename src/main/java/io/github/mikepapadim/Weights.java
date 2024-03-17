@@ -3,9 +3,7 @@ package io.github.mikepapadim;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
-import java.util.ArrayList;
 
-import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import uk.ac.manchester.tornado.api.types.tensors.DType;
 import uk.ac.manchester.tornado.api.types.tensors.Shape;
 import uk.ac.manchester.tornado.api.types.tensors.Tensor;
@@ -39,21 +37,9 @@ public class Weights {
     // final rmsnorm
     final FloatBuffer rms_final_weight; // (dim,)
 
-    // (optional) classifier weights for the logits, on the last layer
     final FloatBuffer wcls; // (vocab_size, dim)
-    float[] wclsAsPrimitive;
-
-    // Data structures for TornadoVM
-
-    FloatArray weightInFloatArray; // vocab in FloatArray
 
     Tensor weightTensor; // vocabInTensor
-
-    // Tensor
-    // Tensor
-    ArrayList<float[]> weightsAsPrimitivesK;
-    ArrayList<float[]> weightsAsPrimitivesV;
-    ArrayList<float[]> weightsAsPrimitivesQ;
 
     /**
      * Constructs Weights by parsing information from a checkpoint's memory segment.
@@ -80,19 +66,8 @@ public class Weights {
         position[0] += (config.seq_len * config.head_size / 2) * Float.BYTES; // skip what used to be freq_cis_imag (for RoPE)
         this.wcls = config.shared_weights ? this.token_embedding_table : takeFloats(memorySegment, position, config.vocab_size, config.dim);
 
-        // Convert FloatBuffer to primitive float
-        this.wclsAsPrimitive = new float[wcls.remaining()];
-        wcls.get(wclsAsPrimitive);
+        this.weightTensor = Tensor.fromFloatBuffer(wcls);
 
-        // Convert the read-only weights used in the last mat-mul to TornadoVM datatypes
-        // that use MemorySegments
-
-        this.weightTensor = Tensor.fromArray(wclsAsPrimitive);
-        //
-
-        // this.weightsAsPrimitivesK = normalizeInputWeight(wk);
-        // this.weightsAsPrimitivesV = normalizeInputWeight(wv);
-        // this.weightsAsPrimitivesQ = normalizeInputWeight(wq);
     }
 
     FloatBuffer takeFloats(MemorySegment memorySegment, long[] position, int... dims) {
@@ -132,18 +107,6 @@ public class Weights {
         position[0] += totalBytes;
         Shape shape = new Shape(dims);
         return new Tensor(shape, slice, DType.FLOAT);
-    }
-
-    ArrayList<float[]> normalizeInputWeight(FloatBuffer[] x) {
-        ArrayList<float[]> xn = new ArrayList<>();
-
-        for (FloatBuffer floatBuffer : x) {
-            FloatBuffer src = floatBuffer.duplicate();
-            float[] temp = new float[src.remaining()];
-            src.get(temp);
-            xn.add(temp);
-        }
-        return xn;
     }
 
 }
