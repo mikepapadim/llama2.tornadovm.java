@@ -27,9 +27,6 @@ class Llama2 {
      * system properties.
      */
     static final boolean USE_VECTOR_API = getBooleanProperty("VectorAPI", true);
-    static final boolean USE_VECTORFLOAT4 = getBooleanProperty("VectorFloat4", false);
-    static final boolean USE_VECTORFLOAT8 = getBooleanProperty("VectorFloat8", false);
-    static final boolean USE_VECTORFLOAT16 = getBooleanProperty("VectorFloat16", false);
 
     private static boolean getBooleanProperty(String propertyName, boolean defaultValue) {
         return "true".equalsIgnoreCase(System.getProperty("llama2." + propertyName, String.valueOf(defaultValue)));
@@ -52,13 +49,6 @@ class Llama2 {
         int dim = p.dim;
         TaskGraph taskGraph;
 
-        System.out.println("Tensor size " + w.weightTensor.getSize());
-        // System.out.println("FloatArray size " + w.weightInFloatArray.getSize());
-        for (int i = 0; i < w.weightTensor.getSize(); i++) {
-            // System.out.println("T " + w.weightTensor.getFloatValue(i) + " F " +
-            // w.weightInFloatArray.get(i));
-        }
-        System.out.println("s.x size " + s.x.length);
         taskGraph = new TaskGraph("s0") //
                 .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.x) //
                 .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightTensor) //
