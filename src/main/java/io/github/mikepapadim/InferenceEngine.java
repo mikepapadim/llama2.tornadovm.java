@@ -5,12 +5,6 @@ import java.util.Arrays;
 import java.util.stream.IntStream;
 
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
-import uk.ac.manchester.tornado.api.types.collections.VectorFloat16;
-import uk.ac.manchester.tornado.api.types.collections.VectorFloat4;
-import uk.ac.manchester.tornado.api.types.collections.VectorFloat8;
-import uk.ac.manchester.tornado.api.types.vectors.Float16;
-import uk.ac.manchester.tornado.api.types.vectors.Float4;
-import uk.ac.manchester.tornado.api.types.vectors.Float8;
 
 /**
  * This class performs forward inference using a Transformer model.
@@ -155,66 +149,6 @@ public class InferenceEngine {
         executionPlan.execute();
 
         return s.logits;
-    }
-
-    /**
-     * Converts a primitive float array to a TornadoVM {@link VectorFloat16}.
-     * 
-     * @param destination
-     *            The {@link VectorFloat16} that will store the data of the float
-     *            array.
-     * @param source
-     *            The input data for the {@link VectorFloat16}.
-     */
-    static void convertToVectorFloat16(VectorFloat16 destination, float[] source) {
-        int numVectors = source.length / destination.vectorWidth();
-        for (int i = 0; i < numVectors; i++) {
-            Float16 float16 = new Float16();
-            for (int j = 0; j < destination.vectorWidth(); j++) {
-                float16.set(j, source[i * destination.vectorWidth() + j]);
-            }
-            destination.set(i, float16);
-        }
-    }
-
-    /**
-     * Converts a primitive float array to a TornadoVM {@link VectorFloat8}.
-     * 
-     * @param destination
-     *            The {@link VectorFloat8} that will store the data of the float
-     *            array.
-     * @param source
-     *            The input data for the {@link VectorFloat8}.
-     */
-    static void convertToVectorFloat8(VectorFloat8 destination, float[] source) {
-        int numVectors = source.length / 8;
-        for (int i = 0; i < numVectors; i++) {
-            Float8 float8 = new Float8();
-            for (int j = 0; j < 8; j++) {
-                float8.set(j, source[i * 8 + j]);
-            }
-            destination.set(i, float8);
-        }
-    }
-
-    /**
-     * Converts a primitive float array to a TornadoVM {@link VectorFloat4}.
-     * 
-     * @param destination
-     *            The {@link VectorFloat4} that will store the data of the float
-     *            array.
-     * @param source
-     *            The input data for the {@link VectorFloat4}.
-     */
-    static void convertToVectorFloat4(VectorFloat4 destination, float[] source) {
-        int numVectors = source.length / 4;
-        for (int i = 0; i < numVectors; i++) {
-            Float4 float4 = new Float4();
-            for (int j = 0; j < 4; j++) {
-                float4.set(j, source[i * 4 + j]);
-            }
-            destination.set(i, float4);
-        }
     }
 
     /**

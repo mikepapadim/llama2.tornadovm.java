@@ -62,12 +62,10 @@ public class Weights {
         this.w2 = takeArray(memorySegment, position, config.n_layers, config.dim, config.hidden_dim);
         this.w3 = takeArray(memorySegment, position, config.n_layers, config.hidden_dim, config.dim);
         this.rms_final_weight = takeFloats(memorySegment, position, config.dim);
-        position[0] += (config.seq_len * config.head_size / 2) * Float.BYTES; // skip what used to be freq_cis_real (for RoPE)
-        position[0] += (config.seq_len * config.head_size / 2) * Float.BYTES; // skip what used to be freq_cis_imag (for RoPE)
+        position[0] += ((long) config.seq_len * config.head_size / 2) * Float.BYTES; // skip what used to be freq_cis_real (for RoPE)
+        position[0] += ((long) config.seq_len * config.head_size / 2) * Float.BYTES; // skip what used to be freq_cis_imag (for RoPE)
         this.wcls = config.shared_weights ? this.token_embedding_table : takeFloats(memorySegment, position, config.vocab_size, config.dim);
-
         this.weightTensor = Tensor.fromFloatBuffer(wcls);
-
     }
 
     FloatBuffer takeFloats(MemorySegment memorySegment, long[] position, int... dims) {

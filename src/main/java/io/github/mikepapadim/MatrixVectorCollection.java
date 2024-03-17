@@ -18,8 +18,6 @@ import uk.ac.manchester.tornado.api.types.tensors.Tensor;
  */
 public class MatrixVectorCollection {
 
-    private static final int TS = 4;
-
     /**
      * Performs matrix multiplication between the weight matrix (W) and the input
      * vector (x). It uses Graal's auto-vectorization for the matrix multiplication.
