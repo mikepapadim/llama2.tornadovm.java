@@ -6,6 +6,8 @@ import java.nio.FloatBuffer;
 import java.util.ArrayList;
 
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
+import uk.ac.manchester.tornado.api.types.tensors.DType;
+import uk.ac.manchester.tornado.api.types.tensors.Shape;
 import uk.ac.manchester.tornado.api.types.tensors.Tensor;
 //import uk.ac.manchester.tornado.api.types.t
 
@@ -23,9 +25,9 @@ public class Weights {
     final FloatBuffer[] rms_att_weight; // (layer, dim) rmsnorm weights
 
     // weights for matmuls. note dim == n_heads * head_size
-    final FloatBuffer[] wq; // (layer, dim, n_heads * head_size)
-    final FloatBuffer[] wk; // (layer, dim, n_kv_heads * head_size)
-    final FloatBuffer[] wv; // (layer, dim, n_kv_heads * head_size)
+    final Tensor[] wq; // (layer, dim, n_heads * head_size)
+    final Tensor[] wk; // (layer, dim, n_kv_heads * head_size)
+    final Tensor[] wv; // (layer, dim, n_kv_heads * head_size)
     final FloatBuffer[] wo; // (layer, n_heads * head_size, dim)
 
     // weights for ffn
@@ -65,9 +67,9 @@ public class Weights {
         long[] position = new long[] { 0 };
         this.token_embedding_table = takeFloats(memorySegment, position, config.vocab_size, config.dim);
         this.rms_att_weight = takeArray(memorySegment, position, config.n_layers, config.dim);
-        this.wq = takeArray(memorySegment, position, config.n_layers, config.dim, config.n_heads * config.head_size);
-        this.wk = takeArray(memorySegment, position, config.n_layers, config.dim, config.n_kv_heads * config.head_size);
-        this.wv = takeArray(memorySegment, position, config.n_layers, config.dim, config.n_kv_heads * config.head_size);
+        this.wq = takeTensors(memorySegment, position, config.n_layers, config.dim, config.n_heads * config.head_size);
+        this.wk = takeTensors(memorySegment, position, config.n_layers, config.dim, config.n_kv_heads * config.head_size);
+        this.wv = takeTensors(memorySegment, position, config.n_layers, config.dim, config.n_kv_heads * config.head_size);
         this.wo = takeArray(memorySegment, position, config.n_layers, config.n_heads * config.head_size, config.dim);
         this.rms_ffn_weight = takeArray(memorySegment, position, config.n_layers, config.dim);
         this.w1 = takeArray(memorySegment, position, config.n_layers, config.hidden_dim, config.dim);
@@ -87,11 +89,10 @@ public class Weights {
 
         this.weightTensor = Tensor.fromArray(wclsAsPrimitive);
         //
-        // this.weightInFloatArray = FloatArray.fromArray(wclsAsPrimitive);
 
-        this.weightsAsPrimitivesK = normalizeInputWeight(wk);
-        this.weightsAsPrimitivesV = normalizeInputWeight(wv);
-        this.weightsAsPrimitivesQ = normalizeInputWeight(wq);
+        // this.weightsAsPrimitivesK = normalizeInputWeight(wk);
+        // this.weightsAsPrimitivesV = normalizeInputWeight(wv);
+        // this.weightsAsPrimitivesQ = normalizeInputWeight(wq);
     }
 
     FloatBuffer takeFloats(MemorySegment memorySegment, long[] position, int... dims) {
@@ -111,6 +112,26 @@ public class Weights {
             segments[i] = takeFloats(memorySegment, position, dims);
         }
         return segments;
+    }
+
+    Tensor[] takeTensors(MemorySegment memorySegment, long[] position, int dim0, int... dims) {
+        Tensor[] weightTensors = new Tensor[dim0];
+        for (int i = 0; i < dim0; ++i) {
+            weightTensors[i] = takeTensor(memorySegment, position, dims);
+        }
+        return weightTensors;
+    }
+
+    Tensor takeTensor(MemorySegment memorySegment, long[] position, int... dims) {
+        long totalBytes = 1;
+        for (int d : dims) {
+            totalBytes *= d;
+        }
+        totalBytes *= Float.BYTES;
+        MemorySegment slice = memorySegment.asSlice(position[0], totalBytes);
+        position[0] += totalBytes;
+        Shape shape = new Shape(dims);
+        return new Tensor(shape, slice, DType.FLOAT);
     }
 
     ArrayList<float[]> normalizeInputWeight(FloatBuffer[] x) {

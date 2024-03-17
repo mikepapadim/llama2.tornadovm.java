@@ -92,7 +92,7 @@ public class MatrixVectorCollection {
     static void matmul(float[] xout, float[] x, Tensor weightTensor, int n, int d) {
         // W (d,n) @ x (n,) -> xout (d,)
         // by far the most amount of time is spent inside this little function
-        MemorySegment wSegment = weightTensor.getSegment();
+        MemorySegment wSegment = weightTensor.getSegmentWithHeader();
         IntStream.range(0, d).parallel().forEach(i -> {
             float val = 0f;
             int j = 0;
