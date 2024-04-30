@@ -3,10 +3,12 @@ package io.github.mikepapadim;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
+import java.util.Arrays;
 
 import uk.ac.manchester.tornado.api.types.tensors.DType;
 import uk.ac.manchester.tornado.api.types.tensors.Shape;
 import uk.ac.manchester.tornado.api.types.tensors.Tensor;
+import uk.ac.manchester.tornado.api.types.tensors.TensorFP32;
 //import uk.ac.manchester.tornado.api.types.t
 
 /**
@@ -23,9 +25,9 @@ public class Weights {
     final FloatBuffer[] rms_att_weight; // (layer, dim) rmsnorm weights
 
     // weights for matmuls. note dim == n_heads * head_size
-    final Tensor[] wq; // (layer, dim, n_heads * head_size)
-    final Tensor[] wk; // (layer, dim, n_kv_heads * head_size)
-    final Tensor[] wv; // (layer, dim, n_kv_heads * head_size)
+    final TensorFP32[] wq; // (layer, dim, n_heads * head_size)
+    final TensorFP32[] wk; // (layer, dim, n_kv_heads * head_size)
+    final TensorFP32[] wv; // (layer, dim, n_kv_heads * head_size)
     final FloatBuffer[] wo; // (layer, n_heads * head_size, dim)
 
     // weights for ffn
@@ -39,7 +41,7 @@ public class Weights {
 
     final FloatBuffer wcls; // (vocab_size, dim)
 
-    Tensor weightTensor; // vocabInTensor
+    TensorFP32 weightTensor; // vocabInTensor
 
     /**
      * Constructs Weights by parsing information from a checkpoint's memory segment.
@@ -65,7 +67,21 @@ public class Weights {
         position[0] += ((long) config.seq_len * config.head_size / 2) * Float.BYTES; // skip what used to be freq_cis_real (for RoPE)
         position[0] += ((long) config.seq_len * config.head_size / 2) * Float.BYTES; // skip what used to be freq_cis_imag (for RoPE)
         this.wcls = config.shared_weights ? this.token_embedding_table : takeFloats(memorySegment, position, config.vocab_size, config.dim);
-        this.weightTensor = Tensor.fromFloatBuffer(wcls);
+        this.weightTensor = getWeightTensor(wcls);
+//        this.wclsAsPrimitive = new float[wcls.remaining()];
+//        wcls.get(wclsAsPrimitive);
+
+//        this.weightTensor = TensorFP32.
+//        MemorySegment.ofBuffer(wcls);
+        //        this.weightTensor = TensorFP32.fromFloatBuffer(wcls);
+    }
+
+    TensorFP32 getWeightTensor(FloatBuffer floatBuffer) {
+        Shape shape = new Shape(floatBuffer.remaining());
+        TensorFP32 t = new TensorFP32(shape);
+
+        t.getSegment().copyFrom(MemorySegment.ofBuffer(floatBuffer));
+        return t;
     }
 
     FloatBuffer takeFloats(MemorySegment memorySegment, long[] position, int... dims) {
@@ -87,24 +103,28 @@ public class Weights {
         return segments;
     }
 
-    Tensor[] takeTensors(MemorySegment memorySegment, long[] position, int dim0, int... dims) {
-        Tensor[] weightTensors = new Tensor[dim0];
+    TensorFP32[] takeTensors(MemorySegment memorySegment, long[] position, int dim0, int... dims) {
+        TensorFP32[] weightTensors = new TensorFP32[dim0];
         for (int i = 0; i < dim0; ++i) {
             weightTensors[i] = takeTensor(memorySegment, position, dims);
         }
         return weightTensors;
     }
 
-    Tensor takeTensor(MemorySegment memorySegment, long[] position, int... dims) {
+    TensorFP32 takeTensor(MemorySegment memorySegment, long[] position, int... dims) {
         long totalBytes = 1;
+
         for (int d : dims) {
             totalBytes *= d;
         }
         totalBytes *= Float.BYTES;
         MemorySegment slice = memorySegment.asSlice(position[0], totalBytes);
         position[0] += totalBytes;
-        Shape shape = new Shape(dims);
-        return new Tensor(shape, slice, DType.FLOAT);
+        long[] longArray = Arrays.stream(dims).mapToLong(i -> i).toArray();
+        Shape shape = new Shape(longArray);
+        TensorFP32 t = new TensorFP32(shape);
+        t.getSegment().copyFrom(slice);
+        return  t;
     }
 
 }

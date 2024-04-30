@@ -11,6 +11,7 @@ import jdk.incubator.vector.VectorSpecies;
 import uk.ac.manchester.tornado.api.annotations.Parallel;
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import uk.ac.manchester.tornado.api.types.tensors.Tensor;
+import uk.ac.manchester.tornado.api.types.tensors.TensorFP32;
 
 /**
  * This class contains a set of Matrix and Vector multiplication methods
@@ -21,7 +22,7 @@ public class MatrixVectorCollection {
     /**
      * Performs matrix multiplication between the weight matrix (W) and the input
      * vector (x). It uses Graal's auto-vectorization for the matrix multiplication.
-     * However, if the {@link #Llama2.USE_VECTOR_API} flag is set to true, it
+     * However, if the {@link Llama2} flag is set to true, it
      * employs explicit vectorization using the Vector API for further optimization.
      *
      * @param xout
@@ -87,7 +88,7 @@ public class MatrixVectorCollection {
         });
     }
 
-    static void matmul(float[] xout, float[] x, Tensor weightTensor, int n, int d) {
+    static void matmul(float[] xout, float[] x, TensorFP32 weightTensor, int n, int d) {
         // W (d,n) @ x (n,) -> xout (d,)
         // by far the most amount of time is spent inside this little function
         MemorySegment wSegment = weightTensor.getSegmentWithHeader();
@@ -123,15 +124,15 @@ public class MatrixVectorCollection {
             int upperBound = n & ~3;
             float[] sum = new float[4];
             for (; j < upperBound; j += sum.length) {
-                sum[0] += weightTensor.getFloatValue(i * n + j + 0) * x[j + 0];
-                sum[1] += weightTensor.getFloatValue(i * n + j + 1) * x[j + 1];
-                sum[2] += weightTensor.getFloatValue(i * n + j + 2) * x[j + 2];
-                sum[3] += weightTensor.getFloatValue(i * n + j + 3) * x[j + 3];
+                sum[0] += weightTensor.get(i * n + j + 0) * x[j + 0];
+                sum[1] += weightTensor.get(i * n + j + 1) * x[j + 1];
+                sum[2] += weightTensor.get(i * n + j + 2) * x[j + 2];
+                sum[3] += weightTensor.get(i * n + j + 3) * x[j + 3];
             }
             val += sum[0] + sum[1] + sum[2] + sum[3];
 
             for (; j < n; j++) {
-                val += weightTensor.getFloatValue(i * n + j) * x[j];
+                val += weightTensor.get(i * n + j) * x[j];
             }
             xout[i] = val;
         });
@@ -193,11 +194,11 @@ public class MatrixVectorCollection {
         }
     }
 
-    static void matrixVectorSimple(float[] xout, float[] x, Tensor w, int n, int d) {
+    static void matrixVectorSimple(float[] xout, float[] x, TensorFP32 w, int n, int d) {
         for (@Parallel int i = 0; i < d; i++) {
             float val = 0f;
             for (int j = 0; j < n; j++) {
-                val += w.getFloatValue(i * n + j) * x[j];
+                val += w.get(i * n + j) * x[j];
             }
             xout[i] = val;
         }

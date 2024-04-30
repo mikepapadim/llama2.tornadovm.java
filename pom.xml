@@ -9,8 +9,6 @@
     <version>1.0-SNAPSHOT</version>
 
     <name>tornadovm-llama-gpu</name>
-    <!-- FIXME change it to the project's website -->
-    <url>http://www.example.com</url>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -22,7 +20,7 @@
         <dependency>
             <groupId>tornado</groupId>
             <artifactId>tornado-api</artifactId>
-            <version>1.0.3-dev</version>
+            <version>1.0.4-dev</version>
         </dependency>
     </dependencies>
 
