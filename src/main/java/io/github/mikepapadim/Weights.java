@@ -5,6 +5,7 @@ import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.util.Arrays;
 
+import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
 import uk.ac.manchester.tornado.api.types.tensors.DType;
 import uk.ac.manchester.tornado.api.types.tensors.Shape;
 import uk.ac.manchester.tornado.api.types.tensors.Tensor;
@@ -67,20 +68,24 @@ public class Weights {
         position[0] += ((long) config.seq_len * config.head_size / 2) * Float.BYTES; // skip what used to be freq_cis_real (for RoPE)
         position[0] += ((long) config.seq_len * config.head_size / 2) * Float.BYTES; // skip what used to be freq_cis_imag (for RoPE)
         this.wcls = config.shared_weights ? this.token_embedding_table : takeFloats(memorySegment, position, config.vocab_size, config.dim);
-        this.weightTensor = getWeightTensor(wcls);
-//        this.wclsAsPrimitive = new float[wcls.remaining()];
-//        wcls.get(wclsAsPrimitive);
 
-//        this.weightTensor = TensorFP32.
-//        MemorySegment.ofBuffer(wcls);
-        //        this.weightTensor = TensorFP32.fromFloatBuffer(wcls);
+        float[] wclsAsPrimitive = new float[wcls.remaining()];
+        wcls.get(wclsAsPrimitive);
+
+        // Convert the read-only weights used in the last mat-mul to TornadoVM datatypes
+        // that use MemorySegments
+//        FloatArray weightInFloatArray = FloatArray.fromArray(wclsAsPrimitive);
+
+        this.weightTensor = TensorFP32.fromArray(wclsAsPrimitive);
+
     }
 
-    TensorFP32 getWeightTensor(FloatBuffer floatBuffer) {
-        Shape shape = new Shape(floatBuffer.remaining());
+    TensorFP32 getWeightTensor(MemorySegment seg, int size) {
+        Shape shape = new Shape(size);
         TensorFP32 t = new TensorFP32(shape);
 
-        t.getSegment().copyFrom(MemorySegment.ofBuffer(floatBuffer));
+
+        t.getSegment().copyFrom(seg);
         return t;
     }
 
