@@ -3,15 +3,14 @@ package io.github.mikepapadim;
 import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
-import java.util.ArrayList;
+import java.util.Arrays;
 
 import uk.ac.manchester.tornado.api.types.arrays.FloatArray;
-import uk.ac.manchester.tornado.api.types.collections.VectorFloat16;
-import uk.ac.manchester.tornado.api.types.collections.VectorFloat4;
-import uk.ac.manchester.tornado.api.types.collections.VectorFloat8;
-import uk.ac.manchester.tornado.api.types.vectors.Float16;
-import uk.ac.manchester.tornado.api.types.vectors.Float4;
-import uk.ac.manchester.tornado.api.types.vectors.Float8;
+import uk.ac.manchester.tornado.api.types.tensors.DType;
+import uk.ac.manchester.tornado.api.types.tensors.Shape;
+import uk.ac.manchester.tornado.api.types.tensors.Tensor;
+import uk.ac.manchester.tornado.api.types.tensors.TensorFP32;
+//import uk.ac.manchester.tornado.api.types.t
 
 /**
  * The Weights class represents the weight parameters of a Transformer model,
@@ -27,9 +26,9 @@ public class Weights {
     final FloatBuffer[] rms_att_weight; // (layer, dim) rmsnorm weights
 
     // weights for matmuls. note dim == n_heads * head_size
-    final FloatBuffer[] wq; // (layer, dim, n_heads * head_size)
-    final FloatBuffer[] wk; // (layer, dim, n_kv_heads * head_size)
-    final FloatBuffer[] wv; // (layer, dim, n_kv_heads * head_size)
+    final TensorFP32[] wq; // (layer, dim, n_heads * head_size)
+    final TensorFP32[] wk; // (layer, dim, n_kv_heads * head_size)
+    final TensorFP32[] wv; // (layer, dim, n_kv_heads * head_size)
     final FloatBuffer[] wo; // (layer, n_heads * head_size, dim)
 
     // weights for ffn
@@ -41,19 +40,9 @@ public class Weights {
     // final rmsnorm
     final FloatBuffer rms_final_weight; // (dim,)
 
-    // (optional) classifier weights for the logits, on the last layer
     final FloatBuffer wcls; // (vocab_size, dim)
-    float[] wclsAsPrimitive;
 
-    // Data structures for TornadoVM
-    VectorFloat16 weightInVectorFloat16; // vocab in VectorFloat16
-    VectorFloat8 weightInVectorFloat8; // vocab in VectorFloat8
-    VectorFloat4 weightInVectorFloat4; // vocab in VectorFloat4
-    FloatArray weightInFloatArray; // vocab in FloatArray
-
-    ArrayList<float[]> weightsAsPrimitivesK;
-    ArrayList<float[]> weightsAsPrimitivesV;
-    ArrayList<float[]> weightsAsPrimitivesQ;
+    TensorFP32 weightTensor; // vocabInTensor
 
     /**
      * Constructs Weights by parsing information from a checkpoint's memory segment.
@@ -67,33 +56,35 @@ public class Weights {
         long[] position = new long[] { 0 };
         this.token_embedding_table = takeFloats(memorySegment, position, config.vocab_size, config.dim);
         this.rms_att_weight = takeArray(memorySegment, position, config.n_layers, config.dim);
-        this.wq = takeArray(memorySegment, position, config.n_layers, config.dim, config.n_heads * config.head_size);
-        this.wk = takeArray(memorySegment, position, config.n_layers, config.dim, config.n_kv_heads * config.head_size);
-        this.wv = takeArray(memorySegment, position, config.n_layers, config.dim, config.n_kv_heads * config.head_size);
+        this.wq = takeTensors(memorySegment, position, config.n_layers, config.dim, config.n_heads * config.head_size);
+        this.wk = takeTensors(memorySegment, position, config.n_layers, config.dim, config.n_kv_heads * config.head_size);
+        this.wv = takeTensors(memorySegment, position, config.n_layers, config.dim, config.n_kv_heads * config.head_size);
         this.wo = takeArray(memorySegment, position, config.n_layers, config.n_heads * config.head_size, config.dim);
         this.rms_ffn_weight = takeArray(memorySegment, position, config.n_layers, config.dim);
         this.w1 = takeArray(memorySegment, position, config.n_layers, config.hidden_dim, config.dim);
         this.w2 = takeArray(memorySegment, position, config.n_layers, config.dim, config.hidden_dim);
         this.w3 = takeArray(memorySegment, position, config.n_layers, config.hidden_dim, config.dim);
         this.rms_final_weight = takeFloats(memorySegment, position, config.dim);
-        position[0] += (config.seq_len * config.head_size / 2) * Float.BYTES; // skip what used to be freq_cis_real (for RoPE)
-        position[0] += (config.seq_len * config.head_size / 2) * Float.BYTES; // skip what used to be freq_cis_imag (for RoPE)
+        position[0] += ((long) config.seq_len * config.head_size / 2) * Float.BYTES; // skip what used to be freq_cis_real (for RoPE)
+        position[0] += ((long) config.seq_len * config.head_size / 2) * Float.BYTES; // skip what used to be freq_cis_imag (for RoPE)
         this.wcls = config.shared_weights ? this.token_embedding_table : takeFloats(memorySegment, position, config.vocab_size, config.dim);
+        this.weightTensor = getWeightTensor(wcls, wcls.remaining());
+    }
 
-        // Convert FloatBuffer to primitive float
-        this.wclsAsPrimitive = new float[wcls.remaining()];
-        wcls.get(wclsAsPrimitive);
-
-        // Convert the read-only weights used in the last mat-mul to TornadoVM datatypes
-        // that use MemorySegments
-        this.weightInFloatArray = FloatArray.fromArray(wclsAsPrimitive);
-        this.weightInVectorFloat16 = createVectorFloat16Array(weightInFloatArray);
-        this.weightInVectorFloat8 = createVectorFloat8Array(weightInFloatArray);
-        this.weightInVectorFloat4 = createVectorFloat4Array(weightInFloatArray);
-
-        this.weightsAsPrimitivesK = normalizeInputWeight(wk);
-        this.weightsAsPrimitivesV = normalizeInputWeight(wv);
-        this.weightsAsPrimitivesQ = normalizeInputWeight(wq);
+    /**
+     * Creates and returns a {@code TensorFP32} object initialized with data from a given {@code FloatBuffer}.
+     * The method constructs a new {@code Shape} object with the specified size to define the dimensions of the tensor.
+     * It then copies the contents of the provided {@code FloatBuffer} into the tensor's memory segment.
+     *
+     * @param buffer the {@code FloatBuffer} containing the float data to be used in the tensor.
+     * @param size   the size of the tensor, which determines the dimensions of the {@code Shape} used in tensor creation.
+     * @return a new {@code TensorFP32} instance with data copied from the provided buffer and the specified size.
+     */
+    TensorFP32 getWeightTensor(FloatBuffer buffer, int size) {
+        Shape shape = new Shape(size);
+        TensorFP32 t = new TensorFP32(shape);
+        t.getSegment().copyFrom(MemorySegment.ofBuffer(buffer));
+        return t;
     }
 
     FloatBuffer takeFloats(MemorySegment memorySegment, long[] position, int... dims) {
@@ -115,103 +106,43 @@ public class Weights {
         return segments;
     }
 
-    ArrayList<float[]> normalizeInputWeight(FloatBuffer[] x) {
-        ArrayList<float[]> xn = new ArrayList<>();
-
-        for (FloatBuffer floatBuffer : x) {
-            FloatBuffer src = floatBuffer.duplicate();
-            float[] temp = new float[src.remaining()];
-            src.get(temp);
-            xn.add(temp);
+    TensorFP32[] takeTensors(MemorySegment memorySegment, long[] position, int dim0, int... dims) {
+        TensorFP32[] weightTensors = new TensorFP32[dim0];
+        for (int i = 0; i < dim0; ++i) {
+            weightTensors[i] = takeTensor(memorySegment, position, dims);
         }
-        return xn;
+        return weightTensors;
     }
 
     /**
-     * Creates a TornadoVM VectorFloat16 array from a given FloatArray.
+     * Constructs a {@code TensorFP32} from a subsection of a {@code MemorySegment} based on specified dimensions.
+     * This method calculates the total size in bytes required for the tensor based on the provided dimensions,
+     * where each dimension's size multiplies the size of a float (since it operates in a float-specific context).
+     * It then creates a slice from the original memory segment starting from a specified position and with the size
+     * calculated. This slice is used to populate the new {@code TensorFP32} instance. After populating, the starting
+     * position in the original memory segment is updated by the size of the slice.
      *
-     * @param fa
-     *            The FloatArray to convert into VectorFloat16.
-     * @return VectorFloat16 array containing the converted data.
+     * @param memorySegment the {@code MemorySegment} from which the tensor data will be extracted.
+     * @param position      an array with the starting position for the slice in the memory segment. This value is updated
+     *                      to reflect the new position after the slice is taken.
+     * @param dims          variable number of integer arguments representing the dimensions of the tensor. These define
+     *                      the shape and the amount of data to extract from the memory segment.
+     * @return a new {@code TensorFP32} instance containing the data extracted from the specified segment of memory.
      */
-    private VectorFloat16 createVectorFloat16Array(FloatArray fa) {
-        int numElements = fa.getSize();
-        int numFloat16Vectors = numElements / 16;
+    TensorFP32 takeTensor(MemorySegment memorySegment, long[] position, int... dims) {
+        long totalBytes = 1;
 
-        // Create an array to store the VectorFloat16 vectors
-        VectorFloat16 vectorFloat16Array = new VectorFloat16(numFloat16Vectors);
-
-        // Iterate over fa to create VectorFloat16 vectors
-        for (int i = 0; i < numFloat16Vectors; i++) {
-            // Extract a subset of sixteen elements from fa
-            Float16 float16 = new Float16();
-            for (int j = 0; j < 16; j++) {
-                float16.set(j, fa.get(i * 16 + j));
-            }
-
-            // Create a VectorFloat16 using the extracted Float16
-            vectorFloat16Array.set(i, float16);
+        for (int d : dims) {
+            totalBytes *= d;
         }
-
-        return vectorFloat16Array;
-    }
-
-    /**
-     * Creates a TornadoVM VectorFloat8 array from a given FloatArray.
-     *
-     * @param fa
-     *            The FloatArray to convert into VectorFloat8.
-     * @return VectorFloat8 array containing the converted data.
-     */
-    private VectorFloat8 createVectorFloat8Array(FloatArray fa) {
-        int numElements = fa.getSize();
-        int numFloat8Vectors = numElements / 8;
-
-        // Create an array to store the VectorFloat8 vectors
-        VectorFloat8 vectorFloat8Array = new VectorFloat8(numFloat8Vectors);
-
-        // Iterate over fa to create VectorFloat8 vectors
-        for (int i = 0; i < numFloat8Vectors; i++) {
-            // Extract a subset of eight elements from fa
-            Float8 float8 = new Float8();
-            for (int j = 0; j < 8; j++) {
-                float8.set(j, fa.get(i * 8 + j));
-            }
-
-            // Create a VectorFloat8 using the extracted Float8
-            vectorFloat8Array.set(i, float8);
-        }
-
-        return vectorFloat8Array;
-    }
-
-    /**
-     * Creates a TornadoVM VectorFloat4 array from a given FloatArray.
-     *
-     * @param fa
-     *            The FloatArray to convert into VectorFloat4.
-     * @return VectorFloat4 array containing the converted data.
-     */
-    private VectorFloat4 createVectorFloat4Array(FloatArray fa) {
-        int numElements = fa.getSize();
-        int numFloat4Vectors = numElements / 4;
-
-        // Create an array to store the VectorFloat4 vectors
-        VectorFloat4 vectorFloat4Array = new VectorFloat4(numFloat4Vectors);
-
-        // Iterate over fa to create VectorFloat4 vectors
-        for (int i = 0; i < numFloat4Vectors; i++) {
-            // Extract a subset of four elements from fa
-            Float4 float4 = new Float4();
-            for (int j = 0; j < 4; j++) {
-                float4.set(j, fa.get(i * 4 + j));
-            }
-
-            // Create a VectorFloat4 using the extracted Float4
-            vectorFloat4Array.set(i, float4);
-        }
-
-        return vectorFloat4Array;
+        totalBytes *= Float.BYTES;
+        MemorySegment slice = memorySegment.asSlice(position[0], totalBytes);
+        position[0] += totalBytes;
+        long[] longArray = Arrays.stream(dims).mapToLong(i -> i).toArray();
+        Shape shape = new Shape(longArray);
+        TensorFP32 t = new TensorFP32(shape);
+        t.getSegment().copyFrom(slice);
+        return t;
     }
 
 }

@@ -27,9 +27,6 @@ class Llama2 {
      * system properties.
      */
     static final boolean USE_VECTOR_API = getBooleanProperty("VectorAPI", true);
-    static final boolean USE_VECTORFLOAT4 = getBooleanProperty("VectorFloat4", false);
-    static final boolean USE_VECTORFLOAT8 = getBooleanProperty("VectorFloat8", false);
-    static final boolean USE_VECTORFLOAT16 = getBooleanProperty("VectorFloat16", false);
 
     private static boolean getBooleanProperty(String propertyName, boolean defaultValue) {
         return "true".equalsIgnoreCase(System.getProperty("llama2." + propertyName, String.valueOf(defaultValue)));
@@ -51,32 +48,12 @@ class Llama2 {
         RunState s = transformer.state;
         int dim = p.dim;
         TaskGraph taskGraph;
-        if (USE_VECTORFLOAT8) {
-            taskGraph = new TaskGraph("s0") //
-                    .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.xVectorFloat8) //
-                    .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInVectorFloat8)//
-                    .task("t0", MatrixVectorCollection::matrixVectorFloat8, s.logits, s.xVectorFloat8, w.weightInVectorFloat8, dim, transformer.config.vocab_size) //
-                    .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
-        } else if (USE_VECTORFLOAT16) {
-            taskGraph = new TaskGraph("s0") //
-                    .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.xVectorFloat16) //
-                    .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInVectorFloat16) //
-                    .task("t0", MatrixVectorCollection::matrixVectorFloat16, s.logits, s.xVectorFloat16, w.weightInVectorFloat16, dim, transformer.config.vocab_size) //
-                    .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
-        } else if (USE_VECTORFLOAT4) {
-            taskGraph = new TaskGraph("s0") //
-                    .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.xVectorFloat4) //
-                    .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInVectorFloat4) //
-                    .task("t0", MatrixVectorCollection::matrixVectorFloat4, s.logits, s.xVectorFloat4, w.weightInVectorFloat4, dim, transformer.config.vocab_size) //
-                    .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
-        } else {
-            taskGraph = new TaskGraph("s0") //
-                    .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.x) //
-                    .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightInFloatArray) //
-                    .task("t0", MatrixVectorCollection::matrixVectorSimple, s.logits, s.x, w.weightInFloatArray, dim, transformer.config.vocab_size) //
-                    .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
-        }
 
+        taskGraph = new TaskGraph("s0") //
+                .transferToDevice(DataTransferMode.EVERY_EXECUTION, s.x) //
+                .transferToDevice(DataTransferMode.FIRST_EXECUTION, w.weightTensor) //
+                .task("t0", MatrixVectorCollection::matrixVectorSimple, s.logits, s.x, w.weightTensor, dim, transformer.config.vocab_size) //
+                .transferToHost(DataTransferMode.EVERY_EXECUTION, s.logits);
         return new TornadoExecutionPlan(taskGraph.snapshot());
     }
 
