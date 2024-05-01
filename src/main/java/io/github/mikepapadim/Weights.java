@@ -68,24 +68,22 @@ public class Weights {
         position[0] += ((long) config.seq_len * config.head_size / 2) * Float.BYTES; // skip what used to be freq_cis_real (for RoPE)
         position[0] += ((long) config.seq_len * config.head_size / 2) * Float.BYTES; // skip what used to be freq_cis_imag (for RoPE)
         this.wcls = config.shared_weights ? this.token_embedding_table : takeFloats(memorySegment, position, config.vocab_size, config.dim);
-
-        float[] wclsAsPrimitive = new float[wcls.remaining()];
-        wcls.get(wclsAsPrimitive);
-
-        // Convert the read-only weights used in the last mat-mul to TornadoVM datatypes
-        // that use MemorySegments
-//        FloatArray weightInFloatArray = FloatArray.fromArray(wclsAsPrimitive);
-
-        this.weightTensor = TensorFP32.fromArray(wclsAsPrimitive);
-
+        this.weightTensor = getWeightTensor(wcls, wcls.remaining());
     }
 
-    TensorFP32 getWeightTensor(MemorySegment seg, int size) {
+    /**
+     * Creates and returns a {@code TensorFP32} object initialized with data from a given {@code FloatBuffer}.
+     * The method constructs a new {@code Shape} object with the specified size to define the dimensions of the tensor.
+     * It then copies the contents of the provided {@code FloatBuffer} into the tensor's memory segment.
+     *
+     * @param buffer the {@code FloatBuffer} containing the float data to be used in the tensor.
+     * @param size   the size of the tensor, which determines the dimensions of the {@code Shape} used in tensor creation.
+     * @return a new {@code TensorFP32} instance with data copied from the provided buffer and the specified size.
+     */
+    TensorFP32 getWeightTensor(FloatBuffer buffer, int size) {
         Shape shape = new Shape(size);
         TensorFP32 t = new TensorFP32(shape);
-
-
-        t.getSegment().copyFrom(seg);
+        t.getSegment().copyFrom(MemorySegment.ofBuffer(buffer));
         return t;
     }
 
@@ -116,6 +114,21 @@ public class Weights {
         return weightTensors;
     }
 
+    /**
+     * Constructs a {@code TensorFP32} from a subsection of a {@code MemorySegment} based on specified dimensions.
+     * This method calculates the total size in bytes required for the tensor based on the provided dimensions,
+     * where each dimension's size multiplies the size of a float (since it operates in a float-specific context).
+     * It then creates a slice from the original memory segment starting from a specified position and with the size
+     * calculated. This slice is used to populate the new {@code TensorFP32} instance. After populating, the starting
+     * position in the original memory segment is updated by the size of the slice.
+     *
+     * @param memorySegment the {@code MemorySegment} from which the tensor data will be extracted.
+     * @param position      an array with the starting position for the slice in the memory segment. This value is updated
+     *                      to reflect the new position after the slice is taken.
+     * @param dims          variable number of integer arguments representing the dimensions of the tensor. These define
+     *                      the shape and the amount of data to extract from the memory segment.
+     * @return a new {@code TensorFP32} instance containing the data extracted from the specified segment of memory.
+     */
     TensorFP32 takeTensor(MemorySegment memorySegment, long[] position, int... dims) {
         long totalBytes = 1;
 
@@ -129,7 +142,7 @@ public class Weights {
         Shape shape = new Shape(longArray);
         TensorFP32 t = new TensorFP32(shape);
         t.getSegment().copyFrom(slice);
-        return  t;
+        return t;
     }
 
 }
