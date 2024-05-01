@@ -144,8 +144,8 @@ public class InferenceEngine {
         rmsnorm(s.x, s.x, w.rms_final_weight, dim);
         // MatrixVectorCollection.matmul(s.logits, s.x, w.wcls, dim, p.vocab_size);
         // MatrixVectorCollection.matmul(s.logits, s.x, w.weightTensor, dim,
-        // p.vocab_size);
 
+        // invoke TornadoVM to run matmul on the GPU
         executionPlan.execute();
 
         return s.logits;
