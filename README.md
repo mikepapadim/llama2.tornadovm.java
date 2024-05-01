@@ -1,5 +1,7 @@
 # An extension of the Llama2.java implementation, accelerated with GPUs by using TornadoVM
 
+<img src="https://github.com/mikepapadim/llama2.tornadovm.java/assets/8652854/4493fe14-7427-4532-91fa-7299cd96034b" width="30%">
+
 This repository provides an implementation of [llama2.java](https://github.com/mukel/llama2.java), extended to use the Vector API and [TornadoVM](https://github.com/beehive-lab/TornadoVM) for acceleration.
 
 ## Prerequisites
