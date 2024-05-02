@@ -34,7 +34,7 @@ Just like the original Java implementation, the program requires a `tokenizer.bi
 wget https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
 wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
 wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories42M.bin
-wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories100M.bin
+wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.bin
 ```
 ### How to run
 The repository contains a `run.sh` script for running. This script takes the following arguments:
