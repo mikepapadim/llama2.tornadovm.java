@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.stream.IntStream;
 
 import uk.ac.manchester.tornado.api.TornadoExecutionPlan;
+import uk.ac.manchester.tornado.api.common.TornadoDevice;
 
 /**
  * This class performs forward inference using a Transformer model.
@@ -146,7 +147,8 @@ public class InferenceEngine {
         // MatrixVectorCollection.matmul(s.logits, s.x, w.weightTensor, dim,
 
         // invoke TornadoVM to run matmul on the GPU
-        executionPlan.execute();
+        TornadoDevice device = TornadoExecutionPlan.getDevice(0, 0);
+        executionPlan.withDevice(device).execute();
 
         return s.logits;
     }
